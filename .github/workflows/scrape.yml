@@ -87,6 +87,10 @@ jobs:
           SHEET_WRITE_DELAY: 1.0
         run: |
           REPEAT_COUNT=0
+          AUTO_REPEAT="${{ env.AUTO_REPEAT }}"
+          MAX_REPEATS_VAL="${{ env.MAX_REPEATS }}"
+          REPEAT_INTERVAL="${{ env.REPEAT_INTERVAL }}"
+          
           while true; do
             echo "=========================================="
             echo "🚀 Run #$((REPEAT_COUNT + 1)) - Mode: $RUN_MODE"
@@ -98,22 +102,21 @@ jobs:
             echo "✅ Scraper completed with exit code: $SCRIPT_EXIT_CODE"
             
             # Check if auto-repeat is enabled
-            if [ "${{ env.AUTO_REPEAT }}" != "true" ]; then
+            if [ "$AUTO_REPEAT" != "true" ]; then
               echo "ℹ️ Auto-repeat disabled. Exiting."
               exit $SCRIPT_EXIT_CODE
             fi
             
             # Check max repeats
             REPEAT_COUNT=$((REPEAT_COUNT + 1))
-            MAX_REPEATS_VAL=${{ env.MAX_REPEATS }}
             if [ "$MAX_REPEATS_VAL" != "0" ] && [ $REPEAT_COUNT -ge $MAX_REPEATS_VAL ]; then
               echo "✅ Reached maximum repeats ($MAX_REPEATS_VAL). Exiting."
               exit $SCRIPT_EXIT_CODE
             fi
             
             # Wait before next repeat
-            WAIT_SECONDS=$(({{ env.REPEAT_INTERVAL }} * 60))
-            echo "⏳ Waiting ${{ env.REPEAT_INTERVAL }} minutes before next run..."
+            WAIT_SECONDS=$((REPEAT_INTERVAL * 60))
+            echo "⏳ Waiting $REPEAT_INTERVAL minutes before next run..."
             sleep $WAIT_SECONDS
           done
       
