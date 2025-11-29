@@ -117,10 +117,8 @@ NICK_LIST_HEADERS = ["Nick Name", "Times Seen", "First Seen", "Last Seen"]
 
 # --- Emoji Configuration ---
 # Marital Status Emojis
-EMOJI_MARRIED = "💍"
-EMOJI_MARRIED_LABEL = "💖"
-EMOJI_UNMARRIED = "❌"
-EMOJI_UNMARRIED_LABEL = "💔"
+EMOJI_MARRIED_YES = "💖"
+EMOJI_MARRIED_NO = "💔"
 
 # Verification Status Emojis
 EMOJI_VERIFIED = "⬛"
@@ -549,6 +547,25 @@ class Sheets:
             log_msg(f"❌ RunList header init failed: {e}")
 
         try:
+            # CheckList headers
+            if self.checklist:
+                cvals = self.checklist.get_all_values()
+                if not cvals or not cvals[0] or all(not c for c in cvals[0]):
+                    log_msg("📋 Initializing CheckList headers...")
+                    self.checklist.append_row(CHECKLIST_HEADERS)
+        except Exception as e:
+            log_msg(f"❌ CheckList header init failed: {e}")
+
+        try:
+            # NickList headers
+            nvals = self.nick_list_ws.get_all_values()
+            if not nvals or not nvals[0] or all(not c for c in nvals[0]):
+                log_msg("📋 Initializing NickList headers...")
+                self.nick_list_ws.append_row(NICK_LIST_HEADERS)
+        except Exception as e:
+            log_msg(f"❌ NickList header init failed: {e}")
+
+        try:
             # Dashboard headers
             dvals = self.dashboard.get_all_values()
             expected = ["Run#", "Timestamp", "Profiles", "Success", "Failed", "New", "Updated", "Unchanged", "Trigger", "Start", "End"]
@@ -616,6 +633,31 @@ class Sheets:
             self._apply_banding(self.runlist, 4, start_row=1)
         except Exception as e:
             log_msg(f"❌ RunList format failed: {e}")
+
+        try:
+            # CheckList formatting
+            if self.checklist:
+                self.checklist.format("A:B", {"textFormat": {"fontFamily": "Courier New", "fontSize": 8, "bold": False}})
+                self.checklist.format("A1:B1", {"textFormat": {"fontFamily": "Courier New", "fontSize": 9, "bold": True}, "horizontalAlignment": "CENTER", "backgroundColor": {"red": 1.0, "green": 0.6, "blue": 0.0}})
+                try:
+                    self.checklist.freeze(rows=1)
+                except:
+                    pass
+                self._apply_banding(self.checklist, 2, start_row=1)
+        except Exception as e:
+            log_msg(f"❌ CheckList format failed: {e}")
+
+        try:
+            # NickList formatting
+            self.nick_list_ws.format("A:D", {"textFormat": {"fontFamily": "Courier New", "fontSize": 8, "bold": False}})
+            self.nick_list_ws.format("A1:D1", {"textFormat": {"fontFamily": "Courier New", "fontSize": 9, "bold": True}, "horizontalAlignment": "CENTER", "backgroundColor": {"red": 1.0, "green": 0.6, "blue": 0.0}})
+            try:
+                self.nick_list_ws.freeze(rows=1)
+            except:
+                pass
+            self._apply_banding(self.nick_list_ws, 4, start_row=1)
+        except Exception as e:
+            log_msg(f"❌ NickList format failed: {e}")
 
         try:
             # Dashboard formatting
@@ -775,6 +817,48 @@ class Sheets:
             time.sleep(SHEET_WRITE_DELAY)
         except Exception as e:
             log_msg(f"⚠️ RunList update failed: {e}")
+
+    def get_pending_nicknames(self):
+        """Get nicknames with 'Pending' status from RunList"""
+        try:
+            rows = self.runlist.get_all_values()
+            pending_nicks = []
+            
+            # Find Status column (column B, index 1)
+            if not rows or len(rows) < 2:
+                log_msg("⚠️ RunList is empty")
+                return []
+            
+            headers = rows[0]
+            status_col_idx = -1
+            nickname_col_idx = -1
+            
+            # Find column indices
+            for idx, header in enumerate(headers):
+                if header.lower() == 'status':
+                    status_col_idx = idx
+                elif header.lower() == 'nickname':
+                    nickname_col_idx = idx
+            
+            if status_col_idx == -1 or nickname_col_idx == -1:
+                log_msg("❌ RunList missing Status or Nickname column")
+                return []
+            
+            # Extract pending nicknames
+            for row in rows[1:]:
+                if len(row) > status_col_idx and len(row) > nickname_col_idx:
+                    status = row[status_col_idx].strip().lower()
+                    nickname = row[nickname_col_idx].strip()
+                    
+                    # Only pick nicks with "Pending" status
+                    if status == 'pending' and nickname:
+                        pending_nicks.append(nickname)
+            
+            log_msg(f"📋 Found {len(pending_nicks)} pending nicknames in RunList")
+            return pending_nicks
+        except Exception as e:
+            log_msg(f"❌ Failed to get pending nicknames: {e}")
+            return []
 
     def update_dashboard(self, metrics: dict):
         """Update Dashboard with run metrics"""
@@ -1034,9 +1118,9 @@ def scrape_profile(driver, nickname: str) -> dict | None:
                 elif key == 'MARRIED':
                     low = value.lower()
                     if low in {'yes', 'married'}:
-                        data[key] = f"{EMOJI_MARRIED} ({EMOJI_MARRIED_LABEL})"
+                        data[key] = f"Yes={EMOJI_MARRIED_YES}"
                     elif low in {'no', 'single', 'unmarried'}:
-                        data[key] = f"{EMOJI_UNMARRIED} ({EMOJI_UNMARRIED_LABEL})"
+                        data[key] = f"No={EMOJI_MARRIED_NO}"
                     else:
                         data[key] = value
                 else:
@@ -1108,6 +1192,10 @@ def main():
     start_time = time.time()
     run_start = get_pkt_time()
     
+    # Check run mode
+    run_mode = os.getenv('RUN_MODE', 'online').lower()
+    log_msg(f"📋 Run Mode: {run_mode.upper()}")
+    
     # Initialize
     log_msg("⚙️ Initializing...")
     driver = setup_browser()
@@ -1128,18 +1216,27 @@ def main():
         driver.quit()
         return
     
-    # Fetch online users
-    try:
-        online_nicknames = fetch_online_nicknames(driver)
-    except Exception as e:
-        log_msg(f"❌ Failed to fetch online users: {e}")
-        driver.quit()
-        return
-    
-    if not online_nicknames:
-        log_msg("⚠️ No online users found")
-        driver.quit()
-        return
+    # Determine which nicknames to process
+    if run_mode == 'sheet':
+        log_msg("📄 Reading from RunList sheet...")
+        online_nicknames = sheets.get_pending_nicknames()
+        if not online_nicknames:
+            log_msg("⚠️ No pending nicknames in RunList")
+            driver.quit()
+            return
+    else:
+        # Fetch online users (default mode)
+        try:
+            online_nicknames = fetch_online_nicknames(driver)
+        except Exception as e:
+            log_msg(f"❌ Failed to fetch online users: {e}")
+            driver.quit()
+            return
+        
+        if not online_nicknames:
+            log_msg("⚠️ No online users found")
+            driver.quit()
+            return
     
     # Process profiles
     log_msg(f"\n📊 Processing {len(online_nicknames)} profiles...\n")
