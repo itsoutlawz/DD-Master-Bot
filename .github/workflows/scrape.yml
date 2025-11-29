@@ -2,18 +2,45 @@ name: DamaDam Master Bot Scraper
 
 on:
   schedule:
-    # Run every 6 hours
+    # Run every 6 hours automatically
     - cron: '0 */6 * * *'
+  
   workflow_dispatch:
-    # Allow manual trigger
+    # Manual trigger with input options
+    inputs:
+      run_mode:
+        description: 'Run Mode'
+        required: true
+        default: 'online'
+        type: choice
+        options:
+          - online
+          - sheet
+      auto_repeat:
+        description: 'Enable Auto-Repeat'
+        required: false
+        default: false
+        type: boolean
+      repeat_interval_minutes:
+        description: 'Repeat Interval (minutes) - only if auto_repeat is true'
+        required: false
+        default: '15'
+        type: string
+      max_repeats:
+        description: 'Maximum Repeats (0 = unlimited)'
+        required: false
+        default: '0'
+        type: string
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -28,7 +55,22 @@ jobs:
       - name: Install Chrome
         uses: browser-actions/setup-chrome@latest
       
-      - name: Run scraper
+      - name: Determine Run Mode
+        id: run_config
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "RUN_MODE=${{ github.event.inputs.run_mode }}" >> $GITHUB_ENV
+            echo "AUTO_REPEAT=${{ github.event.inputs.auto_repeat }}" >> $GITHUB_ENV
+            echo "REPEAT_INTERVAL=${{ github.event.inputs.repeat_interval_minutes }}" >> $GITHUB_ENV
+            echo "MAX_REPEATS=${{ github.event.inputs.max_repeats }}" >> $GITHUB_ENV
+          else
+            echo "RUN_MODE=online" >> $GITHUB_ENV
+            echo "AUTO_REPEAT=false" >> $GITHUB_ENV
+            echo "REPEAT_INTERVAL=15" >> $GITHUB_ENV
+            echo "MAX_REPEATS=0" >> $GITHUB_ENV
+          fi
+      
+      - name: Run scraper with auto-repeat
         env:
           DAMADAM_USERNAME: ${{ secrets.DAMADAM_USERNAME }}
           DAMADAM_PASSWORD: ${{ secrets.DAMADAM_PASSWORD }}
@@ -36,20 +78,58 @@ jobs:
           DAMADAM_PASSWORD_2: ${{ secrets.DAMADAM_PASSWORD_2 }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          RUN_MODE: ${{ env.RUN_MODE }}
           MAX_PROFILES_PER_RUN: 100
           BATCH_SIZE: 10
           MIN_DELAY: 0.5
           MAX_DELAY: 0.7
           PAGE_LOAD_TIMEOUT: 30
           SHEET_WRITE_DELAY: 1.0
-        run: python Scraper.py
+        run: |
+          REPEAT_COUNT=0
+          while true; do
+            echo "=========================================="
+            echo "🚀 Run #$((REPEAT_COUNT + 1)) - Mode: $RUN_MODE"
+            echo "=========================================="
+            
+            python Scraper.py
+            SCRIPT_EXIT_CODE=$?
+            
+            echo "✅ Scraper completed with exit code: $SCRIPT_EXIT_CODE"
+            
+            # Check if auto-repeat is enabled
+            if [ "${{ env.AUTO_REPEAT }}" != "true" ]; then
+              echo "ℹ️ Auto-repeat disabled. Exiting."
+              exit $SCRIPT_EXIT_CODE
+            fi
+            
+            # Check max repeats
+            REPEAT_COUNT=$((REPEAT_COUNT + 1))
+            MAX_REPEATS_VAL=${{ env.MAX_REPEATS }}
+            if [ "$MAX_REPEATS_VAL" != "0" ] && [ $REPEAT_COUNT -ge $MAX_REPEATS_VAL ]; then
+              echo "✅ Reached maximum repeats ($MAX_REPEATS_VAL). Exiting."
+              exit $SCRIPT_EXIT_CODE
+            fi
+            
+            # Wait before next repeat
+            WAIT_SECONDS=$(({{ env.REPEAT_INTERVAL }} * 60))
+            echo "⏳ Waiting ${{ env.REPEAT_INTERVAL }} minutes before next run..."
+            sleep $WAIT_SECONDS
+          done
       
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: scraper-logs
+          name: scraper-logs-${{ github.run_id }}
           path: |
             *.log
             damadam_cookies.pkl
           retention-days: 7
+          if-no-files-found: warn
+      
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Scraper failed!"
+          echo "Check logs for details"
