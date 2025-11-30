@@ -592,7 +592,7 @@ class Sheets:
                     "rowProperties": {
                         # Header row color (Dark Red #cc0000)
                         "headerColor": {
-                            "red": 0.8,   # 204/255
+                            "red": 0.8,
                             "green": 0.0,
                             "blue": 0.0
                         },
@@ -606,7 +606,7 @@ class Sheets:
 
                         # Second band (Very light #ffe8e8)
                         "secondBandColor": {
-                            "red": 1.0,   # 10% of 204
+                            "red": 1.0,
                             "green": 0.91,
                             "blue": 0.91
                         },
@@ -1353,5 +1353,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
