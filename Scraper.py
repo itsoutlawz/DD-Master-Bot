@@ -576,7 +576,6 @@ class Sheets:
             log_msg(f"❌ Dashboard header init failed: {e}")
 
     def _apply_banding(self, sheet, end_col, start_row=1):
-    def _apply_banding(self, sheet, end_col, start_row=1):
     """Apply alternating row colors to sheet (custom colors)"""
     try:
         end_col = max(end_col, 1)
@@ -1354,3 +1353,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
