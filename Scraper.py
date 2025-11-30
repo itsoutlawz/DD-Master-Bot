@@ -576,6 +576,7 @@ class Sheets:
             log_msg(f"❌ Dashboard header init failed: {e}")
 
     def _apply_banding(self, sheet, end_col, start_row=1):
+    def _apply_banding(self, sheet, end_col, start_row=1):
     """Apply alternating row colors to sheet (custom colors)"""
     try:
         end_col = max(end_col, 1)
@@ -592,7 +593,7 @@ class Sheets:
                     "rowProperties": {
                         # Header row color (Dark Red #cc0000)
                         "headerColor": {
-                            "red": 0.8,
+                            "red": 0.8,   # 204/255
                             "green": 0.0,
                             "blue": 0.0
                         },
@@ -606,7 +607,7 @@ class Sheets:
 
                         # Second band (Very light #ffe8e8)
                         "secondBandColor": {
-                            "red": 1.0,
+                            "red": 1.0,   # 10% of 204
                             "green": 0.91,
                             "blue": 0.91
                         },
@@ -1353,7 +1354,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
