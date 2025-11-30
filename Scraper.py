@@ -589,9 +589,9 @@ class Sheets:
                             "endColumnIndex": end_col,
                         },
                         "rowProperties": {
-                            "headerColor": {"red": 1.0, "green": 0.6, "blue": 0.0},
-                            "firstBandColor": {"red": 1.0, "green": 0.98, "blue": 0.94},
-                            "secondBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                            "headerColor": {"red": 0.8, "green": 0.0, "blue": 0.0},
+                            "firstBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                            "secondBandColor": {"red": 1.0, "green": 0.90, "blue": 0.90},
                         },
                     }
                 }
@@ -1333,3 +1333,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
