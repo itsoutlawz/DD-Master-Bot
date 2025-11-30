@@ -576,53 +576,33 @@ class Sheets:
             log_msg(f"❌ Dashboard header init failed: {e}")
 
     def _apply_banding(self, sheet, end_col, start_row=1):
-    """Apply alternating row colors to sheet (custom colors)"""
-    try:
-        end_col = max(end_col, 1)
-
-        req = {
-            "addBanding": {
-                "bandedRange": {
-                    "range": {
-                        "sheetId": sheet.id,
-                        "startRowIndex": start_row,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": end_col,
-                    },
-                    "rowProperties": {
-                        # Header row color (Dark Red #cc0000)
-                        "headerColor": {
-                            "red": 0.8,   # 204/255
-                            "green": 0.0,
-                            "blue": 0.0
+        """Apply alternating row colors to sheet"""
+        try:
+            end_col = max(end_col, 1)
+            req = {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": {
+                            "sheetId": sheet.id,
+                            "startRowIndex": start_row,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": end_col,
                         },
-
-                        # First band (White)
-                        "firstBandColor": {
-                            "red": 1.0,
-                            "green": 1.0,
-                            "blue": 1.0
+                        "rowProperties": {
+                            "headerColor": {"red": 1.0, "green": 0.6, "blue": 0.0},
+                            "firstBandColor": {"red": 1.0, "green": 0.98, "blue": 0.94},
+                            "secondBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
                         },
-
-                        # Second band (Very light #ffe8e8)
-                        "secondBandColor": {
-                            "red": 1.0,   # 10% of 204
-                            "green": 0.91,
-                            "blue": 0.91
-                        },
-                    },
+                    }
                 }
             }
-        }
-
-        self.ss.batch_update({"requests": [req]})
-
-    except APIError as e:
-        message = str(e)
-        if "already has alternating background colors" in message:
-            log_msg(f"ℹ️ Banding already applied on {sheet.title}")
-        else:
-            log_msg(f"❌ Banding failed: {e}")
+            self.ss.batch_update({"requests": [req]})
+        except APIError as e:
+            message = str(e)
+            if "already has alternating background colors" in message:
+                log_msg(f"ℹ️ Banding already applied on {sheet.title}")
+            else:
+                log_msg(f"❌ Banding failed: {e}")
 
     def _format(self):
         """Format all sheets with professional styling"""
@@ -1353,4 +1333,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
