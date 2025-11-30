@@ -121,8 +121,8 @@ EMOJI_MARRIED_YES = "💖"
 EMOJI_MARRIED_NO = "💔"
 
 # Verification Status Emojis
-EMOJI_VERIFIED = "⬛"
-EMOJI_UNVERIFIED = "⬜"
+EMOJI_VERIFIED = "🎫"
+EMOJI_UNVERIFIED = "🚫"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1088,7 +1088,7 @@ def scrape_profile(driver, nickname: str) -> dict | None:
                 driver.find_element(By.CSS_SELECTOR, "div[style*='tomato']")
                 data['STATUS'] = f"{EMOJI_UNVERIFIED} Unverified"
             except Exception:
-                data['STATUS'] = f"{EMOJI_VERIFIED} Verified"
+                data['STATUS'] = f"{EMOJI_VERIFIED}"
 
         data['FRIEND'] = get_friend_status(driver)
 
@@ -1114,13 +1114,13 @@ def scrape_profile(driver, nickname: str) -> dict | None:
                     data[key] = convert_relative_date_to_absolute(value)
                 elif key == 'GENDER':
                     low = value.lower()
-                    data[key] = "🚺" if 'female' in low else "🕺" if 'male' in low else ""
+                    data[key] = "💃" if 'female' in low else "👨" if 'male' in low else ""
                 elif key == 'MARRIED':
                     low = value.lower()
                     if low in {'yes', 'married'}:
-                        data[key] = f"Yes={EMOJI_MARRIED_YES}"
+                        data[key] = f"{EMOJI_MARRIED_YES}"
                     elif low in {'no', 'single', 'unmarried'}:
-                        data[key] = f"No={EMOJI_MARRIED_NO}"
+                        data[key] = f"{EMOJI_MARRIED_NO}"
                     else:
                         data[key] = value
                 else:
@@ -1333,5 +1333,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
