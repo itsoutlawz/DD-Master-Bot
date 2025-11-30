@@ -117,8 +117,8 @@ NICK_LIST_HEADERS = ["Nick Name", "Times Seen", "First Seen", "Last Seen"]
 
 # --- Emoji Configuration ---
 # Marital Status Emojis
-EMOJI_MARRIED_YES = "💖"
-EMOJI_MARRIED_NO = "💔"
+EMOJI_MARRIED_YES = "💞"
+EMOJI_MARRIED_NO = "🖤"
 
 # Verification Status Emojis
 EMOJI_VERIFIED = "🎫"
@@ -1333,6 +1333,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
