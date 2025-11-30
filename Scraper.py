@@ -1114,7 +1114,7 @@ def scrape_profile(driver, nickname: str) -> dict | None:
                     data[key] = convert_relative_date_to_absolute(value)
                 elif key == 'GENDER':
                     low = value.lower()
-                    data[key] = "🚺" if low == '' else "🕺" if low == '' else value
+                    data[key] = "🚺" if 'female' in low else "🕺" if 'male' in low else ""
                 elif key == 'MARRIED':
                     low = value.lower()
                     if low in {'yes', 'married'}:
@@ -1333,4 +1333,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
