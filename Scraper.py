@@ -1082,11 +1082,11 @@ def scrape_profile(driver, nickname: str) -> dict | None:
         if 'account suspended' in page_source.lower():
             data['STATUS'] = f"{EMOJI_UNVERIFIED} Suspended"
         elif 'background:tomato' in page_source or 'style="background:tomato"' in page_source.lower():
-            data['STATUS'] = f"{EMOJI_UNVERIFIED} Unverified"
+            data['STATUS'] = f"{EMOJI_UNVERIFIED}"
         else:
             try:
                 driver.find_element(By.CSS_SELECTOR, "div[style*='tomato']")
-                data['STATUS'] = f"{EMOJI_UNVERIFIED} Unverified"
+                data['STATUS'] = f"{EMOJI_UNVERIFIED}"
             except Exception:
                 data['STATUS'] = f"{EMOJI_VERIFIED}"
 
@@ -1333,6 +1333,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
