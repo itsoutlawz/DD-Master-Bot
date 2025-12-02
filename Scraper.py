@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -42,6 +43,8 @@ ONLINE_URL = "https://damadam.pk/online_kon/"
 SHEET_URL = os.getenv('GOOGLE_SHEET_URL', '')
 GOOGLE_CREDENTIALS_RAW = os.getenv('GOOGLE_CREDENTIALS_JSON', '')
 COOKIES_TXT = os.getenv('DAMADAM_COOKIES_TXT', '')  # ← YE GITHUB SECRET HAI
+DAMADAM_USERNAME = os.getenv('DAMADAM_USERNAME', '')
+DAMADAM_PASSWORD = os.getenv('DAMADAM_PASSWORD', '')
 
 PAGE_LOAD_TIMEOUT = 30
 SHEET_WRITE_DELAY = float(os.getenv('SHEET_WRITE_DELAY', '1.0'))
@@ -169,15 +172,54 @@ def login_with_cookies(driver):
         driver.refresh()
         time.sleep(6)
 
-        if "logout" in driver.page_source.lower() or "profile" in driver.current_url:
+        if _detect_logged_in(driver):
             log_msg("Login successful via cookies!")
             return True
-        else:
-            log_msg("Cookies expired or invalid")
-            return False
+        log_msg("Cookies expired or invalid")
+        return False
     except Exception as e:
         log_msg(f"Cookie error: {e}")
         return False
+
+def _detect_logged_in(driver):
+    return bool(driver.find_elements(By.CSS_SELECTOR, "a[href*='/users/']"))
+
+def login_with_credentials(driver):
+    if not DAMADAM_USERNAME or not DAMADAM_PASSWORD:
+        log_msg("Missing username/password for manual login")
+        return False
+
+    try:
+        log_msg("Attempting credentials login...")
+        driver.get(Home_LOGIN := f"{HOME_URL}login")
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.NAME, "username")))
+
+        username_field = driver.find_element(By.NAME, "username")
+        password_field = driver.find_element(By.NAME, "password")
+
+        username_field.clear()
+        username_field.send_keys(DAMADAM_USERNAME)
+        time.sleep(0.5)
+        password_field.clear()
+        password_field.send_keys(DAMADAM_PASSWORD)
+        password_field.send_keys(Keys.RETURN)
+
+        time.sleep(4)
+
+        if _detect_logged_in(driver):
+            log_msg("Fresh login successful!")
+            return True
+
+        log_msg("Manual credential login failed")
+        return False
+    except Exception as exc:
+        log_msg(f"Credential login error: {exc}")
+        return False
+
+def login(driver):
+    if login_with_cookies(driver):
+        return True
+    return login_with_credentials(driver)
 
 # ============================================================================
 # GOOGLE SHEETS
