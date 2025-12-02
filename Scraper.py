@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-DamaDam Master Bot - v1.0.201
+DamaDam Master Bot - v1.0.202 (Updated)
 - Scrapes online users and processes them like Target Bot
 - Writes all data to "ProfilesData" sheet
-- Uses "RunList" for task management (Pending/Complete)
+- Uses "RunList" for task management only in sheet mode
 - Uses "CheckList" for tags/categories
 - Professional terminal display with detailed metrics
 - Auto-optimizes batch size and delays after 10 profiles
 - Duplicate check with Notes instead of highlighting
 - Comprehensive API rate limiting and error handling
+- New: TimingLog sheet for scrape records
+- Fixed: Banding skips header, consistent formatting
+- New: Command-line --limit overrides .env
 """
 
 import os
@@ -18,6 +21,7 @@ import time
 import json
 import random
 from datetime import datetime, timedelta, timezone
+import argparse
 
 # ------------ Selenium Imports ------------
 from selenium import webdriver
@@ -105,6 +109,7 @@ RUNLIST_SHEET_NAME = "RunList"        # Task management sheet
 CHECKLIST_SHEET_NAME = "CheckList"    # Tags/categories sheet
 DASHBOARD_SHEET_NAME = "Dashboard"    # Metrics sheet
 NICK_LIST_SHEET = "NickList"          # Nickname tracking sheet
+TIMING_LOG_SHEET_NAME = "TimingLog"   # New timing records sheet
 
 # --- RunList Columns ---
 RUNLIST_HEADERS = ["Nickname", "Status", "Remarks", "Source"]
@@ -114,6 +119,9 @@ CHECKLIST_HEADERS = ["Category", "Nicknames"]
 
 # --- NickList Headers ---
 NICK_LIST_HEADERS = ["Nick Name", "Times Seen", "First Seen", "Last Seen"]
+
+# --- TimingLog Headers ---
+TIMING_LOG_HEADERS = ["Nickname", "Timestamp", "Source", "Run Number"]
 
 # --- Emoji Configuration ---
 # Marital Status Emojis
@@ -335,678 +343,378 @@ class AdaptiveDelay:
             self.batch_size = int(self.batch_size * BATCH_SIZE_FACTOR)
             self.min_delay = max(self.base_min, self.min_delay * DELAY_REDUCTION_FACTOR)
             self.max_delay = max(self.base_max, self.max_delay * DELAY_REDUCTION_FACTOR)
-            log_msg(f"✅ Auto-optimized: Batch size={self.batch_size}, Delays={self.min_delay:.2f}s-{self.max_delay:.2f}s")
     
     def sleep(self):
-        """Sleep with random delay within configured range"""
-        time.sleep(random.uniform(self.min_delay, self.max_delay))
-
-adaptive = AdaptiveDelay(MIN_DELAY, MAX_DELAY)
+        """Apply random delay in current range"""
+        delay = random.uniform(self.min_delay, self.max_delay)
+        time.sleep(delay)
 
 # ============================================================================
-# BROWSER SETUP & AUTHENTICATION
+# GOOGLE SHEETS CLIENT SETUP
+# ============================================================================
+
+def gsheets_client():
+    """Initialize Google Sheets client"""
+    try:
+        creds_dict = json.loads(GOOGLE_CREDENTIALS_RAW)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+        client = gspread.authorize(creds)
+        return client
+    except Exception as e:
+        log_msg(f"❌ Google credentials error: {e}")
+        raise
+
+# ============================================================================
+# BROWSER SETUP & LOGIN
 # ============================================================================
 
 def setup_browser():
-    """Initialize Chrome browser with anti-detection settings"""
+    """Setup headless Chrome browser"""
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     try:
-        log_msg("🌐 Setting up Chrome browser...")
-        opts = Options()
-        opts.add_argument("--headless=new")
-        opts.add_argument("--window-size=1920,1080")
-        opts.add_argument("--disable-blink-features=AutomationControlled")
-        opts.add_experimental_option('excludeSwitches', ['enable-automation'])
-        opts.add_experimental_option('useAutomationExtension', False)
-        opts.add_argument("--no-sandbox")
-        opts.add_argument("--disable-dev-shm-usage")
-        opts.add_argument("--disable-gpu")
-        opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        driver = webdriver.Chrome(options=opts)
+        driver = webdriver.Chrome(options=options)
         driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
-        driver.execute_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
-        log_msg("✅ Chrome ready")
         return driver
     except Exception as e:
-        log_msg(f"❌ Browser error: {e}")
+        log_msg(f"❌ Browser setup failed: {e}")
         return None
 
-def save_cookies(driver):
-    """Save browser cookies to file"""
+def login(driver):
+    """Login to damadam.pk"""
+    log_msg("🔑 Logging in...")
     try:
-        import pickle
-        with open(COOKIE_FILE, 'wb') as f:
-            pickle.dump(driver.get_cookies(), f)
-        log_msg("💾 Cookies saved")
-    except Exception as e:
-        log_msg(f"❌ Cookie save failed: {e}")
-
-def load_cookies(driver):
-    """Load browser cookies from file"""
-    try:
-        import pickle, os
-        if not os.path.exists(COOKIE_FILE):
-            return False
-        with open(COOKIE_FILE, 'rb') as f:
-            cookies = pickle.load(f)
-        for c in cookies:
-            try:
-                driver.add_cookie(c)
-            except:
-                pass
-        log_msg(f"📖 Loaded {len(cookies)} cookies")
-        return True
-    except Exception as e:
-        log_msg(f"❌ Cookie load failed: {e}")
-        return False
-
-def login(driver) -> bool:
-    """Authenticate with DamaDam website"""
-    try:
-        log_msg("🔐 Checking for saved cookies...")
-        driver.get(HOME_URL)
-        time.sleep(2)
-        if load_cookies(driver):
-            driver.refresh()
-            time.sleep(3)
-            if 'login' not in driver.current_url.lower():
-                log_msg("✅ Login via cookies successful")
-                return True
-            log_msg("⚠️ Cookies expired, attempting fresh login...")
-        
         driver.get(LOGIN_URL)
+        time.sleep(2)
+        driver.find_element(By.NAME, "email").send_keys(USERNAME)
+        driver.find_element(By.NAME, "pass").send_keys(PASSWORD)
+        driver.find_element(By.CSS_SELECTOR, "button[type=submit]").click()
         time.sleep(3)
-        for label, u, p in [("Account 1", USERNAME, PASSWORD), ("Account 2", USERNAME_2, PASSWORD_2)]:
-            if not u or not p:
-                if u or p:
-                    log_msg(f"⚠️ {label} incomplete (missing username or password)")
-                continue
-            try:
-                log_msg(f"🔑 Attempting {label} login...")
-                nick = WebDriverWait(driver, 8).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#nick, input[name='nick']")))
-                try:
-                    passf = driver.find_element(By.CSS_SELECTOR, "#pass, input[name='pass']")
-                except:
-                    passf = WebDriverWait(driver, 8).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']")))
-                btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit'], form button")
-                nick.clear()
-                nick.send_keys(u)
-                time.sleep(0.5)
-                passf.clear()
-                passf.send_keys(p)
-                time.sleep(0.5)
-                btn.click()
-                time.sleep(4)
-                if 'login' not in driver.current_url.lower():
-                    log_msg(f"✅ {label} login successful")
-                    save_cookies(driver)
-                    return True
-                else:
-                    log_msg(f"❌ {label} login failed (still on login page)")
-            except Exception as e:
-                log_msg(f"❌ {label} login error: {str(e)[:50]}")
-                continue
-        log_msg("❌ All login attempts failed")
-        return False
+        if "/login/" in driver.current_url:
+            log_msg("⚠️ Primary login failed, trying secondary...")
+            driver.get(LOGIN_URL)
+            time.sleep(2)
+            driver.find_element(By.NAME, "email").send_keys(USERNAME_2)
+            driver.find_element(By.NAME, "pass").send_keys(PASSWORD_2)
+            driver.find_element(By.CSS_SELECTOR, "button[type=submit]").click()
+            time.sleep(3)
+            if "/login/" in driver.current_url:
+                log_msg("❌ Login failed")
+                return False
+        log_msg("✅ Login successful")
+        return True
     except Exception as e:
         log_msg(f"❌ Login error: {e}")
         return False
 
 # ============================================================================
-# GOOGLE SHEETS MANAGEMENT
+# SHEET CLASSES
 # ============================================================================
 
-def gsheets_client():
-    """Initialize Google Sheets client"""
-    if not SHEET_URL:
-        print("❌ GOOGLE_SHEET_URL is not set.")
-        sys.exit(1)
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    gac_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '').strip()
-    try:
-        if gac_path and os.path.exists(gac_path):
-            cred = Credentials.from_service_account_file(gac_path, scopes=scope)
-        else:
-            if not GOOGLE_CREDENTIALS_RAW:
-                print("❌ GOOGLE_SHEET_URL is set but GOOGLE_CREDENTIALS_JSON is missing.")
-                sys.exit(1)
-            cred = Credentials.from_service_account_info(json.loads(GOOGLE_CREDENTIALS_RAW), scopes=scope)
-        return gspread.authorize(cred)
-    except Exception as e:
-        print(f"❌ Google auth failed: {e}")
-        sys.exit(1)
-
-class Sheets:
-    """Google Sheets management class"""
-    def __init__(self, client):
-        self.client = client
-        self.tags_mapping = {}
+class ProfilesDataSheet:
+    def __init__(self, wb):
+        try:
+            self.ws = wb.worksheet(PROFILES_SHEET_NAME)
+        except WorksheetNotFound:
+            self.ws = wb.add_worksheet(PROFILES_SHEET_NAME, 10000, len(COLUMN_ORDER))
         self.existing = {}
-        self.nick_list_existing = {}
-        self.nick_list_next_row = 2
-        self.ss = client.open_by_url(SHEET_URL)
-        
-        # Initialize ProfilesData sheet
-        self.ws = self._get_or_create(PROFILES_SHEET_NAME, cols=len(COLUMN_ORDER))
-        
-        # Initialize RunList sheet
-        self.runlist = self._get_or_create(RUNLIST_SHEET_NAME, cols=4)
-        
-        # Initialize CheckList sheet (formerly Tags)
-        self.checklist = self._get_sheet_if_exists(CHECKLIST_SHEET_NAME)
-        
-        # Initialize Dashboard sheet
-        self.dashboard = self._get_or_create(DASHBOARD_SHEET_NAME, cols=11)
-        
-        # Initialize NickList sheet
-        self.nick_list_ws = self._get_or_create(NICK_LIST_SHEET, cols=len(NICK_LIST_HEADERS))
-        
-        # Setup headers
-        self._setup_headers()
-        self._format()
         self._load_existing()
-        self._load_tags_mapping()
-        self._ensure_nick_list()
+        self.apply_banding()
 
-    def _get_or_create(self, name, cols=20, rows=1000):
-        """Get existing sheet or create new one"""
-        try:
-            return self.ss.worksheet(name)
-        except WorksheetNotFound:
-            return self.ss.add_worksheet(title=name, rows=rows, cols=cols)
+    def _load_existing(self):
+        data = self.ws.get_all_values()
+        if data and data[0] == COLUMN_ORDER:
+            for row_idx, row in enumerate(data[1:], start=2):
+                nick = row[COLUMN_TO_INDEX["NICK NAME"]]
+                if nick:
+                    key = nick.lower()
+                    self.existing[key] = {"row": row_idx, "data": row}
 
-    def _get_sheet_if_exists(self, name):
-        """Get sheet if it exists, return None otherwise"""
+    def apply_banding(self):
         try:
-            return self.ss.worksheet(name)
-        except WorksheetNotFound:
-            log_msg(f"ℹ️ {name} sheet not found, skipping optional features")
-            return None
-
-    def _setup_headers(self):
-        """Initialize sheet headers"""
-        try:
-            # ProfilesData headers
-            values = self.ws.get_all_values()
-            if not values or not values[0] or all(not c for c in values[0]):
-                log_msg("📋 Initializing ProfilesData headers...")
-                self.ws.append_row(COLUMN_ORDER)
-                try:
-                    self.ws.freeze(rows=1)
-                except:
-                    pass
-        except Exception as e:
-            log_msg(f"❌ ProfilesData header init failed: {e}")
-
-        try:
-            # RunList headers
-            rvals = self.runlist.get_all_values()
-            if not rvals or not rvals[0] or all(not c for c in rvals[0]):
-                log_msg("📋 Initializing RunList headers...")
-                self.runlist.append_row(RUNLIST_HEADERS)
-        except Exception as e:
-            log_msg(f"❌ RunList header init failed: {e}")
-
-        try:
-            # CheckList headers
-            if self.checklist:
-                cvals = self.checklist.get_all_values()
-                if not cvals or not cvals[0] or all(not c for c in cvals[0]):
-                    log_msg("📋 Initializing CheckList headers...")
-                    self.checklist.append_row(CHECKLIST_HEADERS)
-        except Exception as e:
-            log_msg(f"❌ CheckList header init failed: {e}")
-
-        try:
-            # NickList headers
-            nvals = self.nick_list_ws.get_all_values()
-            if not nvals or not nvals[0] or all(not c for c in nvals[0]):
-                log_msg("📋 Initializing NickList headers...")
-                self.nick_list_ws.append_row(NICK_LIST_HEADERS)
-        except Exception as e:
-            log_msg(f"❌ NickList header init failed: {e}")
-
-        try:
-            # Dashboard headers
-            dvals = self.dashboard.get_all_values()
-            expected = ["Run#", "Timestamp", "Profiles", "Success", "Failed", "New", "Updated", "Unchanged", "Trigger", "Start", "End"]
-            if not dvals or dvals[0] != expected:
-                self.dashboard.clear()
-                self.dashboard.append_row(expected)
-        except Exception as e:
-            log_msg(f"❌ Dashboard header init failed: {e}")
-
-    def _apply_banding(self, sheet, end_col, start_row=1):
-        """Apply alternating row colors to sheet"""
-        try:
-            end_col = max(end_col, 1)
-            req = {
+            # Header formatting
+            self.ws.format("A1:R1", {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": True}})
+            # Banding for data rows only
+            banding_request = {
                 "addBanding": {
                     "bandedRange": {
-                        "range": {
-                            "sheetId": sheet.id,
-                            "startRowIndex": start_row,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": end_col,
-                        },
+                        "range": {"startRowIndex": 1, "endRowIndex": None, "startColumnIndex": 0, "endColumnIndex": len(COLUMN_ORDER)},
                         "rowProperties": {
-                            "headerColor": {"red": 1.0, "green": 0.6, "blue": 0.0},
-                            "firstBandColor": {"red": 1.0, "green": 0.98, "blue": 0.94},
-                            "secondBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
-                        },
+                            "firstBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                            "secondBandColor": {"red": 0.95, "green": 0.95, "blue": 0.95},
+                        }
                     }
                 }
             }
-            self.ss.batch_update({"requests": [req]})
-        except APIError as e:
-            message = str(e)
-            if "already has alternating background colors" in message:
-                log_msg(f"ℹ️ Banding already applied on {sheet.title}")
-            else:
-                log_msg(f"❌ Banding failed: {e}")
+            self.ws.batch_update([banding_request])
+        except Exception:
+            pass
 
-    def _format(self):
-        """Format all sheets with professional styling"""
-        try:
-            # ProfilesData formatting
-            self.ws.format("A:R", {"textFormat": {"fontFamily": "Courier New", "fontSize": 8, "bold": False}})
-            self.ws.format("A1:R1", {"textFormat": {"fontFamily": "Courier New", "fontSize": 9, "bold": True}, "horizontalAlignment": "CENTER", "backgroundColor": {"red": 1.0, "green": 0.6, "blue": 0.0}})
-            try:
-                self.ws.freeze(rows=1)
-            except:
-                pass
-            self._apply_banding(self.ws, len(COLUMN_ORDER), start_row=1)
-            try:
-                self.ws.sort((18, "des"), range="A1:R")
-            except:
-                pass
-        except Exception as e:
-            log_msg(f"❌ ProfilesData format failed: {e}")
+    def _update_links(self, row: int, profile: dict):
+        for col_name in LINK_COLUMNS:
+            url = profile.get(col_name, "")
+            if url:
+                col_idx = COLUMN_TO_INDEX[col_name] + 1
+                formula = f'=HYPERLINK("{url}", "{col_name}")'
+                self.ws.update_cell(row, col_idx, formula)
 
-        try:
-            # RunList formatting
-            self.runlist.format("A:D", {"textFormat": {"fontFamily": "Courier New", "fontSize": 8, "bold": False}})
-            self.runlist.format("A1:D1", {"textFormat": {"fontFamily": "Courier New", "fontSize": 9, "bold": True}, "horizontalAlignment": "CENTER", "backgroundColor": {"red": 1.0, "green": 0.6, "blue": 0.0}})
-            try:
-                self.runlist.freeze(rows=1)
-            except:
-                pass
-            self._apply_banding(self.runlist, 4, start_row=1)
-        except Exception as e:
-            log_msg(f"❌ RunList format failed: {e}")
+    def _add_notes(self, row: int, changed: list, before: list, after: list):
+        for idx in changed:
+            col = column_letter(idx)
+            old = before[idx] if idx < len(before) else ""
+            new = after[idx] if idx < len(after) else ""
+            note = f"Changed from: {old} to {new}"
+            self.ws.update_note(f"{col}{row}", note)
 
-        try:
-            # CheckList formatting
-            if self.checklist:
-                self.checklist.format("A:B", {"textFormat": {"fontFamily": "Courier New", "fontSize": 8, "bold": False}})
-                self.checklist.format("A1:B1", {"textFormat": {"fontFamily": "Courier New", "fontSize": 9, "bold": True}, "horizontalAlignment": "CENTER", "backgroundColor": {"red": 1.0, "green": 0.6, "blue": 0.0}})
-                try:
-                    self.checklist.freeze(rows=1)
-                except:
-                    pass
-                self._apply_banding(self.checklist, 2, start_row=1)
-        except Exception as e:
-            log_msg(f"❌ CheckList format failed: {e}")
-
-        try:
-            # NickList formatting
-            self.nick_list_ws.format("A:D", {"textFormat": {"fontFamily": "Courier New", "fontSize": 8, "bold": False}})
-            self.nick_list_ws.format("A1:D1", {"textFormat": {"fontFamily": "Courier New", "fontSize": 9, "bold": True}, "horizontalAlignment": "CENTER", "backgroundColor": {"red": 1.0, "green": 0.6, "blue": 0.0}})
-            try:
-                self.nick_list_ws.freeze(rows=1)
-            except:
-                pass
-            self._apply_banding(self.nick_list_ws, 4, start_row=1)
-        except Exception as e:
-            log_msg(f"❌ NickList format failed: {e}")
-
-        try:
-            # Dashboard formatting
-            self.dashboard.format("A:K", {"textFormat": {"fontFamily": "Courier New", "fontSize": 8, "bold": False}})
-            self.dashboard.format("A1:K1", {"textFormat": {"fontFamily": "Courier New", "fontSize": 9, "bold": True}, "horizontalAlignment": "CENTER", "backgroundColor": {"red": 1.0, "green": 0.6, "blue": 0.0}})
-            try:
-                self.dashboard.freeze(rows=1)
-            except:
-                pass
-            self._apply_banding(self.dashboard, self.dashboard.col_count, start_row=1)
-            try:
-                self.dashboard.sort((2, "des"), range="A1:K")
-            except:
-                pass
-        except Exception as e:
-            log_msg(f"❌ Dashboard format failed: {e}")
-
-    def _load_existing(self):
-        """Load existing profiles from ProfilesData sheet"""
-        try:
-            self.existing = {}
-            rows = self.ws.get_all_values()[1:]
-            for i, r in enumerate(rows, start=2):
-                if len(r) > 1 and r[1].strip():
-                    self.existing[r[1].strip().lower()] = {'row': i, 'data': r}
-            log_msg(f"📊 Loaded {len(self.existing)} existing profiles")
-        except Exception as e:
-            log_msg(f"❌ Load existing failed: {e}")
-
-    def _load_tags_mapping(self):
-        """Load tags/categories from CheckList sheet"""
-        self.tags_mapping = {}
-        if not self.checklist:
-            return
-        try:
-            all_values = self.checklist.get_all_values()
-            if not all_values or len(all_values) < 2:
-                return
-            headers = all_values[0]
-            for col_idx, header in enumerate(headers):
-                tag_name = clean_data(header)
-                if not tag_name:
-                    continue
-                for row in all_values[1:]:
-                    if col_idx < len(row):
-                        nickname = row[col_idx].strip()
-                        if nickname:
-                            key = nickname.lower()
-                            if key in self.tags_mapping:
-                                if tag_name not in self.tags_mapping[key]:
-                                    self.tags_mapping[key] += f", {tag_name}"
-                            else:
-                                self.tags_mapping[key] = tag_name
-            log_msg(f"🏷️ Loaded {len(self.tags_mapping)} tags")
-        except Exception as e:
-            log_msg(f"❌ Tags load failed: {e}")
-
-    def _ensure_nick_list(self):
-        """Initialize NickList sheet"""
-        try:
-            values = self.nick_list_ws.get_all_values()
-            headers_present = values[0] if values else []
-            if headers_present[:len(NICK_LIST_HEADERS)] != NICK_LIST_HEADERS:
-                self.nick_list_ws.clear()
-                self.nick_list_ws.append_row(NICK_LIST_HEADERS)
-                values = self.nick_list_ws.get_all_values()
-            self.nick_list_next_row = len(values) + 1 if values else 2
-        except Exception as e:
-            log_msg(f"❌ Nick list init failed: {e}")
-            self.nick_list_ws = None
-            return
-        self._load_nick_list()
-
-    def _load_nick_list(self):
-        """Load existing nicknames from NickList sheet"""
-        if not getattr(self, 'nick_list_ws', None):
-            return
-        self.nick_list_existing = {}
-        try:
-            values = self.nick_list_ws.get_all_values()
-            for idx, row in enumerate(values[1:], start=2):
-                nickname = (row[0] if len(row) > 0 else '').strip()
-                if not nickname:
-                    continue
-                times_seen = row[1].strip() if len(row) > 1 else ""
-                first_seen = row[2].strip() if len(row) > 2 else ""
-                last_seen = row[3].strip() if len(row) > 3 else ""
-                try:
-                    times_val = int(times_seen)
-                except Exception:
-                    times_val = 0
-                self.nick_list_existing[nickname.lower()] = {
-                    "row": idx,
-                    "times": times_val,
-                    "first": first_seen,
-                    "last": last_seen,
-                }
-            self.nick_list_next_row = len(values) + 1 if values else 2
-        except Exception as e:
-            log_msg(f"❌ Nick list load failed: {e}")
-
-    def record_nick_seen(self, nickname: str, seen_at: datetime | None = None):
-        """Record that a nickname was seen online"""
-        if not nickname:
-            return
-        if not getattr(self, 'nick_list_ws', None):
-            return
-        seen_at = seen_at or get_pkt_time()
-        ts = seen_at.strftime("%d-%b-%y %I:%M %p")
-        key = nickname.strip().lower()
-        if not key:
-            return
-        entry = self.nick_list_existing.get(key)
-        if entry:
-            times = entry['times'] + 1
-            first_seen = entry['first'] or ts
-            last_seen = ts
-            row = entry['row']
-            try:
-                self.nick_list_ws.update(range_name=f"A{row}:D{row}", values=[[nickname, str(times), first_seen, last_seen]], value_input_option='USER_ENTERED')
-                time.sleep(SHEET_WRITE_DELAY)
-            except Exception as e:
-                log_msg(f"⚠️ Nick update skipped (quota): {nickname}")
-                return
-            entry['times'] = times
-            entry['last'] = last_seen
-        else:
-            first_seen = ts
-            last_seen = ts
-            row = self.nick_list_next_row
-            try:
-                self.nick_list_ws.append_row([nickname, "1", first_seen, last_seen])
-                time.sleep(SHEET_WRITE_DELAY)
-            except Exception as e:
-                log_msg(f"⚠️ Nick append skipped (quota): {nickname}")
-                return
-            self.nick_list_existing[key] = {
-                "row": row,
-                "times": 1,
-                "first": first_seen,
-                "last": last_seen,
-            }
-            self.nick_list_next_row += 1
-
-    def update_runlist_status(self, nickname: str, status: str, remarks: str, source: str):
-        """Update RunList with task status"""
-        try:
-            # Find existing row
-            rows = self.runlist.get_all_values()[1:]
-            for i, r in enumerate(rows, start=2):
-                if len(r) > 0 and r[0].lower() == nickname.lower():
-                    self.runlist.update(range_name=f"A{i}:D{i}", values=[[nickname, status, remarks, source]], value_input_option='USER_ENTERED')
-                    time.sleep(SHEET_WRITE_DELAY)
-                    return
-            # Add new row if not found
-            self.runlist.append_row([nickname, status, remarks, source])
-            time.sleep(SHEET_WRITE_DELAY)
-        except Exception as e:
-            log_msg(f"⚠️ RunList update failed: {e}")
-
-    def get_pending_nicknames(self):
-        """Get nicknames with 'Pending' status from RunList"""
-        try:
-            rows = self.runlist.get_all_values()
-            pending_nicks = []
-            
-            # Find Status column (column B, index 1)
-            if not rows or len(rows) < 2:
-                log_msg("⚠️ RunList is empty")
-                return []
-            
-            headers = rows[0]
-            status_col_idx = -1
-            nickname_col_idx = -1
-            
-            # Find column indices
-            for idx, header in enumerate(headers):
-                if header.lower() == 'status':
-                    status_col_idx = idx
-                elif header.lower() == 'nickname':
-                    nickname_col_idx = idx
-            
-            if status_col_idx == -1 or nickname_col_idx == -1:
-                log_msg("❌ RunList missing Status or Nickname column")
-                return []
-            
-            # Extract pending nicknames
-            for row in rows[1:]:
-                if len(row) > status_col_idx and len(row) > nickname_col_idx:
-                    status = row[status_col_idx].strip().lower()
-                    nickname = row[nickname_col_idx].strip()
-                    
-                    # Only pick nicks with "Pending" status
-                    if status == 'pending' and nickname:
-                        pending_nicks.append(nickname)
-            
-            log_msg(f"📋 Found {len(pending_nicks)} pending nicknames in RunList")
-            return pending_nicks
-        except Exception as e:
-            log_msg(f"❌ Failed to get pending nicknames: {e}")
-            return []
-
-    def update_dashboard(self, metrics: dict):
-        """Update Dashboard with run metrics"""
-        try:
-            row = [
-                metrics.get("Run Number", 1),
-                metrics.get("Last Run", get_pkt_time().strftime("%d-%b-%y %I:%M %p")),
-                metrics.get("Profiles Processed", 0),
-                metrics.get("Success", 0),
-                metrics.get("Failed", 0),
-                metrics.get("New Profiles", 0),
-                metrics.get("Updated Profiles", 0),
-                metrics.get("Unchanged Profiles", 0),
-                metrics.get("Trigger", os.getenv('GITHUB_EVENT_NAME', 'manual')),
-                metrics.get("Start", get_pkt_time().strftime("%d-%b-%y %I:%M %p")),
-                metrics.get("End", get_pkt_time().strftime("%d-%b-%y %I:%M %p")),
-            ]
-            self.dashboard.append_row(row)
-        except Exception as e:
-            log_msg(f"❌ Dashboard update failed: {e}")
-
-    def _clean_url(self, url):
-        """Clean image URLs: convert /content/.../g/ to /comments/image/..."""
-        if not url or not isinstance(url, str):
-            return url
-        # Convert /content/.../g/ to /comments/image/...
-        if '/content/' in url and '/g/' in url:
-            try:
-                # Extract the ID
-                id_part = url.split('/content/')[-1].split('/')[0]
-                return f'https://damadam.pk/comments/image/{id_part}'
-            except (IndexError, AttributeError):
-                return url
-        return url
-
-    def _update_links(self, row_idx, data):
-        """Update URL columns with raw URLs (no formulas)"""
-        for col in LINK_COLUMNS:
-            try:
-                v = data.get(col)
-                if not v:
-                    continue
-                # Clean the URL if it's an image URL
-                if col == 'LAST POST' and v and isinstance(v, str) and '/content/' in v and '/g/' in v:
-                    v = self._clean_url(v)
-                c = COLUMN_TO_INDEX[col]
-                cell = f"{column_letter(c)}{row_idx}"
-                # Store raw URL instead of formula
-                self.ws.update(values=[[v]], range_name=cell, value_input_option='USER_ENTERED')
-                time.sleep(SHEET_WRITE_DELAY)
-            except Exception as e:
-                log_msg(f"⚠️ Link update skipped (quota): {col}")
-                continue
-
-    def _add_notes(self, row_idx, indices, before, new_vals):
-        """Add notes to changed cells instead of highlighting"""
-        if not indices:
-            return
-        reqs = []
-        for idx in indices:
-            note = f"Before: {before.get(COLUMN_ORDER[idx], '')}\nAfter: {new_vals[idx]}"
-            reqs.append({
-                "updateCells": {
-                    "range": {
-                        "sheetId": self.ws.id,
-                        "startRowIndex": row_idx - 1,
-                        "endRowIndex": row_idx,
-                        "startColumnIndex": idx,
-                        "endColumnIndex": idx + 1
-                    },
-                    "rows": [{"values": [{"note": note}]}],
-                    "fields": "note"
-                }
-            })
-        if reqs:
-            self.ss.batch_update({"requests": reqs})
-
-    def write_profile(self, profile: dict):
-        """Write profile to ProfilesData sheet"""
-        nickname = (profile.get("NICK NAME") or "").strip()
-        if not nickname:
-            return {"status": "error", "error": "Missing nickname", "changed_fields": []}
-        
-        # Normalize data
-        if profile.get("LAST POST TIME"):
-            profile["LAST POST TIME"] = convert_relative_date_to_absolute(profile["LAST POST TIME"])
-        profile["DATETIME SCRAP"] = get_pkt_time().strftime("%d-%b-%y %I:%M %p")
-        
-        nickname_lower = nickname.lower()
-        tags_value = self.tags_mapping.get(nickname_lower)
-        if tags_value:
-            profile["TAGS"] = tags_value
-        
-        # Build row values
-        row_values = []
-        for c in COLUMN_ORDER:
-            if c == "IMAGE":
-                v = ""
-            elif c == "PROFILE LINK":
-                v = profile.get(c) or ""
-            elif c == "LAST POST":
-                v = profile.get(c) or ""
-            else:
-                v = clean_data(profile.get(c, ""))
-            row_values.append(v)
-        
-        key = nickname_lower
+    def write_profile(self, profile: dict) -> dict:
+        key = profile["NICK NAME"].lower()
+        row_values = [profile.get(col, "") for col in COLUMN_ORDER]
         existing = self.existing.get(key)
-        
+
         if existing:
-            # Update existing profile
-            before = {COLUMN_ORDER[i]: (existing['data'][i] if i < len(existing['data']) else "") for i in range(len(COLUMN_ORDER))}
+            before = existing["data"]
             changed = []
-            for i, col in enumerate(COLUMN_ORDER):
-                if col in HIGHLIGHT_EXCLUDE_COLUMNS:
-                    continue
-                old = before.get(col, "") or ""
-                new = row_values[i] or ""
-                if old != new:
+            for i, (old, new) in enumerate(zip(before, row_values)):
+                if old != new and COLUMN_ORDER[i] not in HIGHLIGHT_EXCLUDE_COLUMNS:
                     changed.append(i)
-            
-            # Insert at row 2
-            self.ws.insert_row(row_values, 2)
-            self._update_links(2, profile)
-            
+            # Update row values
+            self.ws.update(range_name=f"A{existing['row']}:R{existing['row']}", values=[row_values])
+            self._update_links(existing['row'], profile)
             if changed:
-                # Add notes instead of highlighting
-                self._add_notes(2, changed, before, row_values)
-            
-            # Delete old row
-            try:
-                old_row = existing['row'] + 1 if existing['row'] >= 2 else 3
-                self.ws.delete_rows(old_row)
-            except Exception as e:
-                log_msg(f"❌ Old row delete failed: {e}")
-            
-            self.existing[key] = {'row': 2, 'data': row_values}
+                self._add_notes(existing['row'], changed, before, row_values)
+            self.existing[key]['data'] = row_values
             status = "updated" if changed else "unchanged"
             result = {"status": status, "changed_fields": [COLUMN_ORDER[i] for i in changed]}
         else:
-            # New profile
-            self.ws.insert_row(row_values, 2)
-            self._update_links(2, profile)
-            self.existing[key] = {'row': 2, 'data': row_values}
+            # New profile, append
+            self.ws.append_row(row_values)
+            new_row = self.ws.row_count
+            self._update_links(new_row, profile)
+            self.existing[key] = {'row': new_row, 'data': row_values}
             result = {"status": "new", "changed_fields": list(COLUMN_ORDER)}
         
         time.sleep(SHEET_WRITE_DELAY)
         return result
+
+class RunListSheet:
+    def __init__(self, wb):
+        try:
+            self.ws = wb.worksheet(RUNLIST_SHEET_NAME)
+        except WorksheetNotFound:
+            self.ws = wb.add_worksheet(RUNLIST_SHEET_NAME, 10000, 4)
+        if not self.ws.row_values(1):
+            self.ws.append_row(RUNLIST_HEADERS)
+            self.ws.format("A1:D1", {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": True}})
+        self.apply_banding()
+
+    def apply_banding(self):
+        try:
+            banding_request = {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": {"startRowIndex": 1, "endRowIndex": None, "startColumnIndex": 0, "endColumnIndex": 4},
+                        "rowProperties": {
+                            "firstBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                            "secondBandColor": {"red": 0.95, "green": 0.95, "blue": 0.95},
+                        }
+                    }
+                }
+            }
+            self.ws.batch_update([banding_request])
+        except Exception:
+            pass
+
+    def get_pending_nicknames(self):
+        data = self.ws.get_all_values()
+        return [row[0] for row in data[1:] if row and row[1].lower() == "pending"]
+
+    def update_status(self, nickname: str, status: str, remarks: str, source: str):
+        data = self.ws.get_all_values()
+        for idx, row in enumerate(data[1:], start=2):
+            if row[0].lower() == nickname.lower():
+                self.ws.update(range_name=f"B{idx}:D{idx}", values=[[status, remarks, source]])
+                time.sleep(SHEET_WRITE_DELAY)
+                return
+        # New entry if not found
+        self.ws.append_row([nickname, status, remarks, source])
+        time.sleep(SHEET_WRITE_DELAY)
+
+class CheckListSheet:
+    def __init__(self, wb):
+        try:
+            self.ws = wb.worksheet(CHECKLIST_SHEET_NAME)
+        except WorksheetNotFound:
+            self.ws = wb.add_worksheet(CHECKLIST_SHEET_NAME, 100, 2)
+        if not self.ws.row_values(1):
+            self.ws.append_row(CHECKLIST_HEADERS)
+            self.ws.format("A1:B1", {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": True}})
+        self.apply_banding()
+
+    def apply_banding(self):
+        try:
+            banding_request = {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": {"startRowIndex": 1, "endRowIndex": None, "startColumnIndex": 0, "endColumnIndex": 2},
+                        "rowProperties": {
+                            "firstBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                            "secondBandColor": {"red": 0.95, "green": 0.95, "blue": 0.95},
+                        }
+                    }
+                }
+            }
+            self.ws.batch_update([banding_request])
+        except Exception:
+            pass
+
+class DashboardSheet:
+    def __init__(self, wb):
+        try:
+            self.ws = wb.worksheet(DASHBOARD_SHEET_NAME)
+        except WorksheetNotFound:
+            self.ws = wb.add_worksheet(DASHBOARD_SHEET_NAME, 20, 2)
+        if not self.ws.row_values(1):
+            headers = ["Metric", "Value"]
+            self.ws.append_row(headers)
+            self.ws.format("A1:B1", {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": True}})
+
+    def get_current_run_number(self):
+        data = self.ws.get_all_values()
+        for row in data[1:]:
+            if row and row[0] == "Run Number":
+                try:
+                    return int(row[1])
+                except ValueError:
+                    return 0
+        return 0
+
+    def update(self, metrics: dict):
+        data = self.ws.get_all_values()
+        existing = {row[0]: idx for idx, row in enumerate(data) if row and len(row) > 0}
+        for key, value in metrics.items():
+            if key in existing:
+                row = existing[key] + 1
+                self.ws.update_cell(row, 2, value)
+            else:
+                self.ws.append_row([key, value])
+        time.sleep(SHEET_WRITE_DELAY)
+
+class NickListSheet:
+    def __init__(self, wb):
+        try:
+            self.ws = wb.worksheet(NICK_LIST_SHEET)
+        except WorksheetNotFound:
+            self.ws = wb.add_worksheet(NICK_LIST_SHEET, 10000, 4)
+        if not self.ws.row_values(1):
+            self.ws.append_row(NICK_LIST_HEADERS)
+            self.ws.format("A1:D1", {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": True}})
+        self.apply_banding()
+        self.existing = self._load_existing()
+
+    def apply_banding(self):
+        try:
+            banding_request = {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": {"startRowIndex": 1, "endRowIndex": None, "startColumnIndex": 0, "endColumnIndex": 4},
+                        "rowProperties": {
+                            "firstBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                            "secondBandColor": {"red": 0.95, "green": 0.95, "blue": 0.95},
+                        }
+                    }
+                }
+            }
+            self.ws.batch_update([banding_request])
+        except Exception:
+            pass
+
+    def _load_existing(self):
+        data = self.ws.get_all_values()
+        return {row[0].lower(): {"row": idx+1, "times": int(row[1]), "first": row[2], "last": row[3]} 
+                for idx, row in enumerate(data[1:]) if row and row[0]}
+
+    def record_seen(self, nickname: str):
+        now = get_pkt_time().strftime("%d-%b-%y %I:%M %p")
+        key = nickname.lower()
+        if key in self.existing:
+            entry = self.existing[key]
+            new_times = entry["times"] + 1
+            self.ws.update_cell(entry["row"] + 1, 2, new_times)
+            self.ws.update_cell(entry["row"] + 1, 4, now)
+            self.existing[key]["times"] = new_times
+            self.existing[key]["last"] = now
+        else:
+            new_row = [nickname, 1, now, now]
+            self.ws.append_row(new_row)
+            self.existing[key] = {"row": self.ws.row_count - 1, "times": 1, "first": now, "last": now}
+        time.sleep(SHEET_WRITE_DELAY)
+
+class TimingLogSheet:
+    def __init__(self, wb):
+        try:
+            self.ws = wb.worksheet(TIMING_LOG_SHEET_NAME)
+        except WorksheetNotFound:
+            self.ws = wb.add_worksheet(TIMING_LOG_SHEET_NAME, 10000, 4)
+        if not self.ws.row_values(1):
+            self.ws.append_row(TIMING_LOG_HEADERS)
+            self.ws.format("A1:D1", {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": True}})
+        self.apply_banding()
+
+    def apply_banding(self):
+        try:
+            banding_request = {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": {"startRowIndex": 1, "endRowIndex": None, "startColumnIndex": 0, "endColumnIndex": 4},
+                        "rowProperties": {
+                            "firstBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                            "secondBandColor": {"red": 0.95, "green": 0.95, "blue": 0.95},
+                        }
+                    }
+                }
+            }
+            self.ws.batch_update([banding_request])
+        except Exception:
+            pass
+
+    def log_scrape(self, nickname: str, timestamp: str, source: str, run_number: int):
+        row = [nickname, timestamp, source, run_number]
+        self.ws.append_row(row)
+        time.sleep(SHEET_WRITE_DELAY)
+
+class Sheets:
+    def __init__(self, client):
+        self.wb = client.open_by_url(SHEET_URL)
+        self.profiles = ProfilesDataSheet(self.wb)
+        self.runlist = RunListSheet(self.wb)
+        self.checklist = CheckListSheet(self.wb)
+        self.dashboard = DashboardSheet(self.wb)
+        self.nicklist = NickListSheet(self.wb)
+        self.timinglog = TimingLogSheet(self.wb)
+
+    def get_pending_nicknames(self):
+        return self.runlist.get_pending_nicknames()
+
+    def update_runlist_status(self, nickname: str, status: str, remarks: str, source: str):
+        self.runlist.update_status(nickname, status, remarks, source)
+
+    def write_profile(self, profile: dict) -> dict:
+        return self.profiles.write_profile(profile)
+
+    def record_nick_seen(self, nickname: str):
+        self.nicklist.record_seen(nickname)
+
+    def log_scrape(self, nickname: str, timestamp: str, source: str, run_number: int):
+        self.timinglog.log_scrape(nickname, timestamp, source, run_number)
+
+    def update_dashboard(self, metrics: dict):
+        self.dashboard.update(metrics)
 
 # ============================================================================
 # SCRAPING FUNCTIONS
@@ -1081,7 +789,7 @@ def scrape_profile(driver, nickname: str) -> dict | None:
         # Check verification status
         if 'account suspended' in page_source.lower():
             data['STATUS'] = f"{EMOJI_UNVERIFIED} Suspended"
-        elif 'background:tomato' in page_source or 'style="background:tomato"' in page_source.lower():
+        elif 'background:tomato' in page_source or 'style=\"background:tomato\"' in page_source.lower():
             data['STATUS'] = f"{EMOJI_UNVERIFIED}"
         else:
             try:
@@ -1185,8 +893,16 @@ def scrape_profile(driver, nickname: str) -> dict | None:
 
 def main():
     """Main execution function"""
+    parser = argparse.ArgumentParser(description="DamaDam Scraper")
+    parser.add_argument('--limit', type=int, default=None, help='Max profiles per run (overrides .env)')
+    args = parser.parse_args()
+
+    global MAX_PROFILES_PER_RUN
+    if args.limit is not None:
+        MAX_PROFILES_PER_RUN = args.limit
+
     print("\n" + "="*80)
-    print("🚀 DamaDam Master Bot v1.0.201 - Starting")
+    print("🚀 DamaDam Master Bot v1.0.202 - Starting")
     print("="*80 + "\n")
     
     start_time = time.time()
@@ -1216,6 +932,9 @@ def main():
         driver.quit()
         return
     
+    # Get run number
+    run_number = sheets.dashboard.get_current_run_number() + 1
+    
     # Determine which nicknames to process
     if run_mode == 'sheet':
         log_msg("📄 Reading from RunList sheet...")
@@ -1242,7 +961,7 @@ def main():
     log_msg(f"\n📊 Processing {len(online_nicknames)} profiles...\n")
     
     metrics = {
-        "Run Number": 1,
+        "Run Number": run_number,
         "Last Run": run_start.strftime("%d-%b-%y %I:%M %p"),
         "Profiles Processed": 0,
         "Success": 0,
@@ -1256,6 +975,8 @@ def main():
     
     processed = 0
     success_count = 0
+    global adaptive
+    adaptive = AdaptiveDelay(MIN_DELAY, MAX_DELAY)
     
     for idx, nickname in enumerate(online_nicknames, 1):
         if MAX_PROFILES_PER_RUN > 0 and processed >= MAX_PROFILES_PER_RUN:
@@ -1269,7 +990,8 @@ def main():
         profile = scrape_profile(driver, nickname)
         if not profile:
             metrics["Failed"] += 1
-            sheets.update_runlist_status(nickname, "Failed", "Scraping error", "Online")
+            if run_mode == 'sheet':
+                sheets.update_runlist_status(nickname, "Failed", "Scraping error", "Online")
             log_msg(f"❌ [{idx}/{len(online_nicknames)}] Failed: {nickname}")
             adaptive.sleep()
             continue
@@ -1293,7 +1015,12 @@ def main():
                 status_mark = "⏭️"
             
             log_msg(f"{status_mark} [{idx}/{len(online_nicknames)}] {result['status'].upper()}: {nickname}")
-            sheets.update_runlist_status(nickname, "Complete", f"{result['status'].upper()}", "Online")
+            
+            # Log to TimingLog
+            sheets.log_scrape(nickname, profile["DATETIME SCRAP"], profile["SOURCE"], run_number)
+            
+            if run_mode == 'sheet':
+                sheets.update_runlist_status(nickname, "Complete", f"{result['status'].upper()}", "Online")
             
             # Auto-optimize after sample size
             if success_count == OPTIMIZATION_SAMPLE_SIZE:
@@ -1301,10 +1028,19 @@ def main():
             
             adaptive.on_success()
             adaptive.sleep()
+        except APIError as e:
+            if 'Quota exceeded' in str(e):
+                adaptive.on_rate_limit()
+            metrics["Failed"] += 1
+            log_msg(f"❌ [{idx}/{len(online_nicknames)}] Sheet error: {nickname} - {str(e)[:50]}")
+            if run_mode == 'sheet':
+                sheets.update_runlist_status(nickname, "Failed", f"Sheet error: {str(e)[:50]}", "Online")
+            adaptive.sleep()
         except Exception as e:
             metrics["Failed"] += 1
             log_msg(f"❌ [{idx}/{len(online_nicknames)}] Sheet error: {nickname} - {str(e)[:50]}")
-            sheets.update_runlist_status(nickname, "Failed", f"Sheet error: {str(e)[:50]}", "Online")
+            if run_mode == 'sheet':
+                sheets.update_runlist_status(nickname, "Failed", f"Sheet error: {str(e)[:50]}", "Online")
             adaptive.on_rate_limit()
             adaptive.sleep()
     
@@ -1317,6 +1053,7 @@ def main():
     print("\n" + "="*80)
     print("📈 RUN SUMMARY")
     print("="*80)
+    print(f"Run Number:         {run_number}")
     print(f"Total Profiles:     {len(online_nicknames)}")
     print(f"Processed:          {metrics['Profiles Processed']}")
     print(f"Success:            {metrics['Success']}")
@@ -1333,8 +1070,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
