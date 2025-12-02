@@ -1,4 +1,4 @@
-name: DamaDam Master Bot Scraper
+name: DamaDam Master Bot 🤖
 
 on:
   schedule:
@@ -26,6 +26,11 @@ on:
         required: false
         default: '5'
         type: string
+      max_repeats:
+        description: 'Maximum Repeats (0 = unlimited)'
+        required: false
+        default: '0'
+        type: string
       max_profiles:
         description: 'Max profiles per run (0=unlimited)'
         required: false
@@ -39,7 +44,6 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 480
     strategy:
       max-parallel: 1
     
@@ -66,35 +70,67 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "RUN_MODE=${{ github.event.inputs.run_mode }}" >> $GITHUB_ENV
             echo "AUTO_REPEAT=${{ github.event.inputs.auto_repeat }}" >> $GITHUB_ENV
-            echo "REPEAT_INTERVAL_MINUTES=${{ github.event.inputs.repeat_interval_minutes }}" >> $GITHUB_ENV
+            echo "REPEAT_INTERVAL=${{ github.event.inputs.repeat_interval_minutes }}" >> $GITHUB_ENV
+            echo "MAX_REPEATS=${{ github.event.inputs.max_repeats }}" >> $GITHUB_ENV
             echo "MAX_PROFILES=${{ github.event.inputs.max_profiles }}" >> $GITHUB_ENV
           else
             echo "RUN_MODE=online" >> $GITHUB_ENV
-            echo "AUTO_REPEAT=true" >> $GITHUB_ENV
-            echo "REPEAT_INTERVAL_MINUTES=5" >> $GITHUB_ENV
+            echo "AUTO_REPEAT=false" >> $GITHUB_ENV
+            echo "REPEAT_INTERVAL=5" >> $GITHUB_ENV
+            echo "MAX_REPEATS=0" >> $GITHUB_ENV
             echo "MAX_PROFILES=0" >> $GITHUB_ENV
           fi
       
-      - name: Run scraper
+      - name: Run scraper with auto-repeat
         env:
           DAMADAM_USERNAME: ${{ secrets.DAMADAM_USERNAME }}
           DAMADAM_PASSWORD: ${{ secrets.DAMADAM_PASSWORD }}
           DAMADAM_USERNAME_2: ${{ secrets.DAMADAM_USERNAME_2 }}
           DAMADAM_PASSWORD_2: ${{ secrets.DAMADAM_PASSWORD_2 }}
-          DAMADAM_COOKIES_TXT: ${{ secrets.DAMADAM_COOKIES_TXT }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           RUN_MODE: ${{ env.RUN_MODE }}
-          AUTO_REPEAT: ${{ env.AUTO_REPEAT }}
-          REPEAT_INTERVAL_MINUTES: ${{ env.REPEAT_INTERVAL_MINUTES }}
-          MAX_PROFILES_PER_RUN: ${{ env.MAX_PROFILES }}
           BATCH_SIZE: 10
           MIN_DELAY: 0.5
           MAX_DELAY: 0.7
           PAGE_LOAD_TIMEOUT: 30
           SHEET_WRITE_DELAY: 1.0
+          MAX_PROFILES_PER_RUN: ${{ env.MAX_PROFILES }}
         run: |
-          python Scraper.py --mode "${{ env.RUN_MODE }}"
+          REPEAT_COUNT=0
+          AUTO_REPEAT="${{ env.AUTO_REPEAT }}"
+          MAX_REPEATS_VAL="${{ env.MAX_REPEATS }}"
+          REPEAT_INTERVAL="${{ env.REPEAT_INTERVAL }}"
+          MAX_PROFILES="${{ env.MAX_PROFILES }}"
+          
+          while true; do
+            echo "=========================================="
+            echo "🚀 Run #$((REPEAT_COUNT + 1)) - Mode: $RUN_MODE"
+            echo "=========================================="
+            
+            python Scraper.py --limit $MAX_PROFILES
+            SCRIPT_EXIT_CODE=$?
+            
+            echo "✅ Scraper completed with exit code: $SCRIPT_EXIT_CODE"
+            
+            # Check if auto-repeat is enabled
+            if [ "$AUTO_REPEAT" != "true" ]; then
+              echo "ℹ️ Auto-repeat disabled. Exiting."
+              exit $SCRIPT_EXIT_CODE
+            fi
+            
+            # Check max repeats
+            REPEAT_COUNT=$((REPEAT_COUNT + 1))
+            if [ "$MAX_REPEATS_VAL" != "0" ] && [ $REPEAT_COUNT -ge $MAX_REPEATS_VAL ]; then
+              echo "✅ Reached maximum repeats ($MAX_REPEATS_VAL). Exiting."
+              exit $SCRIPT_EXIT_CODE
+            fi
+            
+            # Wait before next repeat
+            WAIT_SECONDS=$((REPEAT_INTERVAL * 60))
+            echo "⏳ Waiting $REPEAT_INTERVAL minutes before next run..."
+            sleep $WAIT_SECONDS
+          done
       
       - name: Upload logs
         if: always()
