@@ -143,6 +143,51 @@ def setup_browser():
 # COOKIES LOGIN - 100% CLOUDFLARE BYPASS
 # ============================================================================
 
+def _parse_cookies_from_json(cookies_json_str):
+    """Parse cookies from JSON format (browser DevTools export)"""
+    try:
+        cookies_list = json.loads(cookies_json_str)
+        if not isinstance(cookies_list, list):
+            return []
+        
+        cookies = []
+        for cookie_obj in cookies_list:
+            if isinstance(cookie_obj, dict):
+                cookie = {
+                    'name': cookie_obj.get('name', ''),
+                    'value': cookie_obj.get('value', ''),
+                    'domain': cookie_obj.get('domain', ''),
+                    'path': cookie_obj.get('path', '/'),
+                    'secure': cookie_obj.get('secure', False),
+                    'httpOnly': cookie_obj.get('httpOnly', False),
+                }
+                if cookie_obj.get('expires') and cookie_obj['expires'] > 0:
+                    cookie['expiry'] = int(cookie_obj['expires'])
+                cookies.append(cookie)
+        return cookies
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+def _parse_cookies_from_netscape(cookies_txt_str):
+    """Parse cookies from Netscape format (tab-separated)"""
+    cookies = []
+    for line in cookies_txt_str.strip().split('\n'):
+        if line.strip() and not line.startswith('#'):
+            parts = line.split('\t')
+            if len(parts) >= 7:
+                cookie = {
+                    'name': parts[5],
+                    'value': parts[6],
+                    'domain': parts[0],
+                    'path': parts[2],
+                    'secure': parts[3].lower() == 'true',
+                    'httpOnly': parts[4].lower() == 'true' if len(parts) > 4 else False,
+                }
+                if len(parts) > 4 and parts[4].isdigit():
+                    cookie['expiry'] = int(parts[4])
+                cookies.append(cookie)
+    return cookies
+
 def login_with_cookies(driver):
     log_msg("Applying cookies for login...")
     driver.get(HOME_URL)
@@ -153,21 +198,23 @@ def login_with_cookies(driver):
         return False
 
     try:
-        for line in COOKIES_TXT.strip().split('\n'):
-            if line.strip() and not line.startswith('#'):
-                parts = line.split('\t')
-                if len(parts) >= 7:
-                    cookie = {
-                        'name': parts[5],
-                        'value': parts[6],
-                        'domain': parts[0],
-                        'path': parts[2],
-                        'secure': parts[3].lower() == 'true',
-                        'httpOnly': parts[4].lower() == 'true' if len(parts) > 4 else False,
-                    }
-                    if len(parts) > 4 and parts[4].isdigit():
-                        cookie['expiry'] = int(parts[4])
-                    driver.add_cookie(cookie)
+        # Try parsing as JSON first (browser DevTools format)
+        cookies = _parse_cookies_from_json(COOKIES_TXT)
+        
+        # If JSON parsing failed, try Netscape format
+        if not cookies:
+            cookies = _parse_cookies_from_netscape(COOKIES_TXT)
+        
+        if not cookies:
+            log_msg("No valid cookies found in provided format")
+            return False
+        
+        # Add all cookies to driver
+        for cookie in cookies:
+            try:
+                driver.add_cookie(cookie)
+            except Exception as e:
+                log_msg(f"Failed to add cookie {cookie.get('name')}: {e}")
 
         driver.refresh()
         time.sleep(6)
