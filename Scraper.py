@@ -66,7 +66,7 @@ def get_pkt_time():
     return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)
 
 def log_msg(msg):
-    print(f"[{get_pkt_time().strftime('%H:%M:%S')}] {msg]")
+    print(f"[{get_pkt_time().strftime('%H:%M:%S')}] {msg}")
     sys.stdout.flush()
 
 # ============================================================================
