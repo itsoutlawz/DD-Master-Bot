@@ -2,8 +2,8 @@ name: DamaDam Master Bot Scraper
 
 on:
   schedule:
-    # Run every 6 hours automatically
-    - cron: '0 */6 * * *'
+    # Run every 8 hours automatically
+    - cron: '0 */8 * * *'
   
   workflow_dispatch:
     # Manual trigger with input options
@@ -24,13 +24,22 @@ on:
       repeat_interval_minutes:
         description: 'Repeat Interval (minutes) - only if auto_repeat is true'
         required: false
-        default: '15'
+        default: '5'
         type: string
       max_repeats:
         description: 'Maximum Repeats (0 = unlimited)'
         required: false
         default: '0'
         type: string
+      max_profiles:
+        description: 'Max profiles per run (0=unlimited)'
+        required: false
+        default: '0'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   scrape:
@@ -63,11 +72,13 @@ jobs:
             echo "AUTO_REPEAT=${{ github.event.inputs.auto_repeat }}" >> $GITHUB_ENV
             echo "REPEAT_INTERVAL=${{ github.event.inputs.repeat_interval_minutes }}" >> $GITHUB_ENV
             echo "MAX_REPEATS=${{ github.event.inputs.max_repeats }}" >> $GITHUB_ENV
+            echo "MAX_PROFILES=${{ github.event.inputs.max_profiles }}" >> $GITHUB_ENV
           else
             echo "RUN_MODE=online" >> $GITHUB_ENV
             echo "AUTO_REPEAT=false" >> $GITHUB_ENV
-            echo "REPEAT_INTERVAL=15" >> $GITHUB_ENV
+            echo "REPEAT_INTERVAL=5" >> $GITHUB_ENV
             echo "MAX_REPEATS=0" >> $GITHUB_ENV
+            echo "MAX_PROFILES=0" >> $GITHUB_ENV
           fi
       
       - name: Run scraper with auto-repeat
@@ -79,24 +90,25 @@ jobs:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           RUN_MODE: ${{ env.RUN_MODE }}
-          MAX_PROFILES_PER_RUN: 100
           BATCH_SIZE: 10
           MIN_DELAY: 0.5
           MAX_DELAY: 0.7
           PAGE_LOAD_TIMEOUT: 30
           SHEET_WRITE_DELAY: 1.0
+          MAX_PROFILES_PER_RUN: ${{ env.MAX_PROFILES }}
         run: |
           REPEAT_COUNT=0
           AUTO_REPEAT="${{ env.AUTO_REPEAT }}"
           MAX_REPEATS_VAL="${{ env.MAX_REPEATS }}"
           REPEAT_INTERVAL="${{ env.REPEAT_INTERVAL }}"
+          MAX_PROFILES="${{ env.MAX_PROFILES }}"
           
           while true; do
             echo "=========================================="
             echo "🚀 Run #$((REPEAT_COUNT + 1)) - Mode: $RUN_MODE"
             echo "=========================================="
             
-            python Scraper.py
+            python Scraper.py --limit $MAX_PROFILES
             SCRIPT_EXIT_CODE=$?
             
             echo "✅ Scraper completed with exit code: $SCRIPT_EXIT_CODE"
