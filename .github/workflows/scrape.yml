@@ -87,6 +87,7 @@ jobs:
           DAMADAM_PASSWORD: ${{ secrets.DAMADAM_PASSWORD }}
           DAMADAM_USERNAME_2: ${{ secrets.DAMADAM_USERNAME_2 }}
           DAMADAM_PASSWORD_2: ${{ secrets.DAMADAM_PASSWORD_2 }}
+          DAMADAM_COOKIES_TXT: ${{ secrets.DAMADAM_COOKIES_TXT }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
           RUN_MODE: ${{ env.RUN_MODE }}
