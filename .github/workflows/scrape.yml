@@ -47,6 +47,14 @@ jobs:
       - name: 📥 Checkout Code
         uses: actions/checkout@v3
       
+      - name: 🍪 Restore Cookies Cache
+        uses: actions/cache@v3
+        with:
+          path: damadam_cookies.pkl
+          key: damadam-cookies-${{ github.run_id }}
+          restore-keys: |
+            damadam-cookies-
+      
       - name: 🐍 Setup Python
         uses: actions/setup-python@v4
         with:
@@ -69,6 +77,10 @@ jobs:
           cat > .env << 'EOF'
           GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }}
           SHEET_URL=${{ secrets.SHEET_URL }}
+          DAMADAM_USERNAME=${{ secrets.DAMADAM_USERNAME }}
+          DAMADAM_PASSWORD=${{ secrets.DAMADAM_PASSWORD }}
+          DAMADAM_USERNAME_2=${{ secrets.DAMADAM_USERNAME_2 }}
+          DAMADAM_PASSWORD_2=${{ secrets.DAMADAM_PASSWORD_2 }}
           EOF
           
           echo "✅ Environment file created"
@@ -79,6 +91,14 @@ jobs:
           fi
           if [ -z "${{ secrets.SHEET_URL }}" ]; then
             echo "❌ ERROR: SHEET_URL secret is not set!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.DAMADAM_USERNAME }}" ]; then
+            echo "❌ ERROR: DAMADAM_USERNAME secret is not set!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.DAMADAM_PASSWORD }}" ]; then
+            echo "❌ ERROR: DAMADAM_PASSWORD secret is not set!"
             exit 1
           fi
           echo "✅ All required secrets are present"
@@ -117,3 +137,10 @@ jobs:
           echo "- **Repeat Mode**: ${{ github.event.inputs.repeat_mode || 'true (scheduled)' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Run Time**: $(date)" >> $GITHUB_STEP_SUMMARY
+      
+      - name: 🍪 Save Cookies Cache
+        if: always()
+        uses: actions/cache/save@v3
+        with:
+          path: damadam_cookies.pkl
+          key: damadam-cookies-${{ github.run_id }}

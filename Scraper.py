@@ -127,17 +127,24 @@ class DamaDamScraper:
         try:
             sheet_id = worksheet._properties['sheetId']
             
-            # Clear any existing banding
-            requests = [{
-                "deleteBanding": {
-                    "bandedRangeId": sheet_id
-                }
-            }]
-            
+            # Try to delete existing banding (ignore if doesn't exist)
             try:
-                self.spreadsheet.batch_update({"requests": requests})
-            except:
-                pass  # No existing banding to delete
+                # Get all banding ranges
+                sheet_metadata = self.spreadsheet.fetch_sheet_metadata()
+                for sheet in sheet_metadata.get('sheets', []):
+                    if sheet['properties']['sheetId'] == sheet_id:
+                        banded_ranges = sheet.get('bandedRanges', [])
+                        for banded_range in banded_ranges:
+                            delete_request = {
+                                "deleteBanding": {
+                                    "bandedRangeId": banded_range['bandedRangeId']
+                                }
+                            }
+                            self.spreadsheet.batch_update({"requests": [delete_request]})
+                            print(f"[{self._timestamp()}] 🧹 Cleared existing banding")
+            except Exception as e:
+                # No banding to delete or other error - that's fine
+                pass
             
             # Apply new banding (starting from row 2 to skip header)
             start_row = 1 if has_header else 0  # Row 2 in 0-indexed = 1
@@ -229,14 +236,25 @@ class DamaDamScraper:
         print(f"[{self._timestamp()}] ✅ Chrome ready")
     
     def _login_with_cookies(self):
-        """Login using saved cookies"""
-        print(f"[{self._timestamp()}] 🔐 Checking for saved cookies...")
+        """Login using saved cookies or credentials"""
+        print(f"[{self._timestamp()}] 🔐 Attempting login...")
         
-        cookie_file = 'cookies.pkl'
-        if not os.path.exists(cookie_file):
-            print(f"[{self._timestamp()}] ❌ No cookies found. Please login first.")
-            return False
+        # Try cookies first
+        cookie_file = 'damadam_cookies.pkl'
+        if os.path.exists(cookie_file):
+            print(f"[{self._timestamp()}] 📖 Found saved cookies, trying...")
+            if self._try_cookie_login(cookie_file):
+                return True
         
+        # Fall back to username/password
+        print(f"[{self._timestamp()}] 🔑 No valid cookies, trying credentials...")
+        return self._login_with_credentials()
+    
+    def _try_cookie_login(self, cookie_file):
+        """Try to login with saved cookies"""
+        
+    def _try_cookie_login(self, cookie_file):
+        """Try to login with saved cookies"""
         try:
             self.driver.get('https://damadam.pk')
             time.sleep(2)
@@ -247,7 +265,10 @@ class DamaDamScraper:
             for cookie in cookies:
                 if 'expiry' in cookie:
                     del cookie['expiry']
-                self.driver.add_cookie(cookie)
+                try:
+                    self.driver.add_cookie(cookie)
+                except:
+                    pass
             
             print(f"[{self._timestamp()}] 📖 Loaded {len(cookies)} cookies")
             
@@ -255,16 +276,72 @@ class DamaDamScraper:
             time.sleep(3)
             
             # Verify login
-            if "logout" in self.driver.page_source.lower():
+            if "logout" in self.driver.page_source.lower() or "/logout" in self.driver.page_source.lower():
                 print(f"[{self._timestamp()}] ✅ Login via cookies successful")
                 return True
             else:
-                print(f"[{self._timestamp()}] ❌ Login verification failed")
+                print(f"[{self._timestamp()}] ⚠️ Cookies expired")
                 return False
                 
         except Exception as e:
-            print(f"[{self._timestamp()}] ❌ Error loading cookies: {e}")
+            print(f"[{self._timestamp()}] ⚠️ Cookie login failed: {e}")
             return False
+    
+    def _login_with_credentials(self):
+        """Login using username and password from environment"""
+        username = os.getenv('DAMADAM_USERNAME')
+        password = os.getenv('DAMADAM_PASSWORD')
+        
+        if not username or not password:
+            print(f"[{self._timestamp()}] ❌ DAMADAM_USERNAME and DAMADAM_PASSWORD not set")
+            return False
+        
+        try:
+            self.driver.get('https://damadam.pk/login')
+            time.sleep(3)
+            
+            # Find and fill login form
+            username_field = self.wait.until(
+                EC.presence_of_element_located((By.NAME, "nick"))
+            )
+            password_field = self.driver.find_element(By.NAME, "pass")
+            submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+            
+            username_field.clear()
+            username_field.send_keys(username)
+            time.sleep(0.5)
+            
+            password_field.clear()
+            password_field.send_keys(password)
+            time.sleep(0.5)
+            
+            submit_button.click()
+            time.sleep(5)
+            
+            # Verify login
+            if "logout" in self.driver.page_source.lower() or "/logout" in self.driver.page_source.lower():
+                print(f"[{self._timestamp()}] ✅ Login successful")
+                
+                # Save cookies for next time
+                self._save_cookies()
+                return True
+            else:
+                print(f"[{self._timestamp()}] ❌ Login failed - check credentials")
+                return False
+                
+        except Exception as e:
+            print(f"[{self._timestamp()}] ❌ Login error: {e}")
+            return False
+    
+    def _save_cookies(self):
+        """Save current session cookies"""
+        try:
+            cookies = self.driver.get_cookies()
+            with open('damadam_cookies.pkl', 'wb') as f:
+                pickle.dump(cookies, f)
+            print(f"[{self._timestamp()}] 💾 Cookies saved for future use")
+        except Exception as e:
+            print(f"[{self._timestamp()}] ⚠️ Failed to save cookies: {e}")
     
     def _load_existing_profiles(self):
         """Load existing profiles from ProfilesData"""
