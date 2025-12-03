@@ -213,19 +213,33 @@ class DamaDamScraper:
             print(f"[{self._timestamp()}] ⚠️ Formatting error for {worksheet.title}: {e}")
     
     def _setup_browser(self):
-        """Setup Chrome browser"""
+        """Setup Chrome browser with better Cloudflare bypass"""
         print(f"[{self._timestamp()}] 🌐 Setting up Chrome browser...")
         
         options = webdriver.ChromeOptions()
-        options.add_argument('--headless')
+        options.add_argument('--headless=new')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
         options.add_argument('--window-size=1920,1080')
-        options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        
+        # Better user agent to avoid Cloudflare detection
+        options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        
+        # Additional anti-detection measures
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
         
         self.driver = webdriver.Chrome(options=options)
-        self.wait = WebDriverWait(self.driver, 10)
+        
+        # Remove webdriver property
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+        # Set longer page load timeout
+        self.driver.set_page_load_timeout(60)
+        
+        self.wait = WebDriverWait(self.driver, 20)
         
         print(f"[{self._timestamp()}] ✅ Chrome ready")
     
@@ -329,6 +343,15 @@ class DamaDamScraper:
         """Fallback: Login with username/password"""
         print(f"[{self._timestamp()}] 🔑 Attempting credential login...")
         
+        # First, try to load homepage to establish session
+        try:
+            print(f"[{self._timestamp()}] 🌐 Loading homepage first...")
+            self.driver.get('https://damadam.pk/')
+            time.sleep(5)
+            print(f"[{self._timestamp()}] ✅ Homepage loaded")
+        except Exception as e:
+            print(f"[{self._timestamp()}] ⚠️ Homepage load issue: {e}")
+        
         accounts = [
             ("Account 1", os.getenv('DAMADAM_USERNAME'), os.getenv('DAMADAM_PASSWORD')),
             ("Account 2", os.getenv('DAMADAM_USERNAME_2'), os.getenv('DAMADAM_PASSWORD_2'))
@@ -336,14 +359,17 @@ class DamaDamScraper:
         
         for account_name, username, password in accounts:
             if not username or not password:
+                print(f"[{self._timestamp()}] ⏭️ Skipping {account_name} - credentials not set")
                 continue
             
-            print(f"[{self._timestamp()}] 🔐 Trying {account_name}...")
+            print(f"[{self._timestamp()}] 🔐 Trying {account_name} ({username})...")
             
             if self._attempt_login(username, password):
                 print(f"[{self._timestamp()}] ✅ Login successful with {account_name}")
                 self._save_cookies()
                 return True
+            else:
+                print(f"[{self._timestamp()}] ❌ {account_name} failed")
         
         print(f"[{self._timestamp()}] ❌ All login attempts failed")
         return False
@@ -351,32 +377,73 @@ class DamaDamScraper:
     def _attempt_login(self, username, password):
         """Attempt login with credentials - FIXED for DamaDam form"""
         try:
+            print(f"[{self._timestamp()}] 🌐 Loading login page...")
             self.driver.get('https://damadam.pk/login/')
-            time.sleep(3)
+            time.sleep(5)  # Wait longer for page load
             
-            # Wait for form to load
-            self.wait.until(EC.presence_of_element_located((By.NAME, "username")))
+            # Save page source for debugging
+            try:
+                with open('debug_login_page.html', 'w', encoding='utf-8') as f:
+                    f.write(self.driver.page_source)
+                print(f"[{self._timestamp()}] 💾 Saved login page HTML for debugging")
+            except:
+                pass
             
-            # Find and fill username (name="username", id="nick")
-            username_field = self.driver.find_element(By.NAME, "username")
+            print(f"[{self._timestamp()}] 🔍 Looking for username field...")
+            # Wait for username field - increase timeout
+            username_field = WebDriverWait(self.driver, 20).until(
+                EC.presence_of_element_located((By.NAME, "username"))
+            )
+            print(f"[{self._timestamp()}] ✅ Found username field")
+            
+            # Fill username
             username_field.clear()
             username_field.send_keys(username)
-            time.sleep(0.5)
+            print(f"[{self._timestamp()}] ✅ Filled username: {username}")
+            time.sleep(1)
             
-            # Find and fill password (name="password", id="pass")
+            # Fill password
+            print(f"[{self._timestamp()}] 🔍 Looking for password field...")
             password_field = self.driver.find_element(By.NAME, "password")
             password_field.clear()
             password_field.send_keys(password)
-            time.sleep(0.5)
+            print(f"[{self._timestamp()}] ✅ Filled password")
+            time.sleep(1)
             
-            # Submit form (button with "LOGIN" text)
-            submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+            # Click submit button
+            print(f"[{self._timestamp()}] 🔘 Clicking login button...")
+            submit_button = self.driver.find_element(By.XPATH, "//button[@type='submit']")
             submit_button.click()
+            print(f"[{self._timestamp()}] ✅ Clicked login button")
             time.sleep(5)
             
             # Check if login successful
-            return self._verify_login()
+            is_logged_in = self._verify_login()
             
+            if is_logged_in:
+                print(f"[{self._timestamp()}] ✅ Login verification passed")
+            else:
+                print(f"[{self._timestamp()}] ❌ Login verification failed")
+                # Save page after login attempt
+                try:
+                    with open('debug_after_login.html', 'w', encoding='utf-8') as f:
+                        f.write(self.driver.page_source)
+                    print(f"[{self._timestamp()}] 💾 Saved post-login page for debugging")
+                except:
+                    pass
+            
+            return is_logged_in
+            
+        except TimeoutException as e:
+            print(f"[{self._timestamp()}] ❌ Timeout waiting for login form")
+            print(f"[{self._timestamp()}] 🔍 Current URL: {self.driver.current_url}")
+            try:
+                with open('debug_timeout_page.html', 'w', encoding='utf-8') as f:
+                    f.write(self.driver.page_source)
+                print(f"[{self._timestamp()}] 💾 Saved timeout page for debugging")
+            except:
+                pass
+            return False
         except Exception as e:
             print(f"[{self._timestamp()}] ❌ Login error: {e}")
             import traceback
