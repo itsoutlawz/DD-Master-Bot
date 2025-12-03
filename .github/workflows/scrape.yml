@@ -1,4 +1,4 @@
-name: DamaDam Scraper v1.0.205
+name: DamaDam Scraper 📥 v1.0.205
 
 on:
   schedule:
@@ -40,10 +40,10 @@ jobs:
     
     steps:
       - name: 📥 Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: 🍪 Restore Cookies Cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: cache/
           key: damadam-cookies-${{ github.run_id }}
@@ -131,7 +131,7 @@ jobs:
       
       - name: 📊 Upload Debug Files
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: debug-files
           path: |
@@ -157,7 +157,7 @@ jobs:
       
       - name: 🍪 Save Cookies Cache
         if: always()
-        uses: actions/cache/save@v3
+        uses: actions/cache/save@v4
         with:
           path: cache/
           key: damadam-cookies-${{ github.run_id }}
