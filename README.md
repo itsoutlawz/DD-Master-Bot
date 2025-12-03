@@ -1,335 +1,325 @@
-# 🚀 DamaDam Master Bot v1.0.205
+# DamaDam Master Bot v1.0.201
 
-**Automated profile scraper for DamaDam.pk with Google Sheets integration**
+Professional web scraping bot for DamaDam.pk with Google Sheets integration.
 
-[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Enabled-success)](https://github.com/yourusername/DD-Master-Bot/actions)
-[![Python](https://img.shields.io/badge/Python-3.10+-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+## 🎯 Features
 
----
+- **Online User Scraping**: Automatically fetches and processes currently online users
+- **Complete Profile Data**: Extracts 18 data points per profile including images, posts, followers, etc.
+- **Google Sheets Integration**: Real-time data export with professional formatting
+- **Duplicate Detection**: Automatically updates existing profiles with change tracking via notes
+- **Auto-Optimization**: Intelligently adjusts batch sizes and delays after 10 profiles
+- **Rate Limiting**: Adaptive delays to respect Google API quotas
+- **Professional Terminal Output**: Detailed metrics and progress tracking
+- **Task Management**: RunList sheet tracks scraping status (Pending/Complete)
+- **Emoji Indicators**: Visual markers for verification status and marital status
+- **Error Recovery**: Comprehensive error handling with detailed logging
 
-## ✨ What's New in v1.0.205
+## 📊 Data Collected
 
-### 🔧 Major Fixes:
-- ✅ **Fixed online user scraping** - Now correctly finds users (was returning 0)
-- ✅ **Added login fallback** - Username/password login if cookies fail
-- ✅ **Fixed sheet formatting** - Asimov font (row 1: size 9, row 2+: size 8)
-- ✅ **Removed color formatting** - Clean, professional look
-- ✅ **Fixed column ranges** - Proper ranges for all sheets
-- ✅ **Enhanced error handling** - Debug HTML saved on failures
+Each profile includes:
+- IMAGE - Profile picture URL
+- NICK NAME - Username
+- TAGS - Categories/tags from CheckList
+- LAST POST - URL to most recent post
+- LAST POST TIME - Date of last post
+- FRIEND - Friend status (Yes/No)
+- CITY - Location
+- GENDER - Gender (💃/🕺)
+- MARRIED - Marital status (💍/❌)
+- AGE - Age
+- JOINED - Join date
+- FOLLOWERS - Follower count
+- STATUS - Account status (⬛ Verified/⬜ Unverified)
+- POSTS - Total posts count
+- PROFILE LINK - Direct profile URL
+- INTRO - Profile bio/introduction
+- SOURCE - Data source (Online)
+- DATETIME SCRAP - Scraping timestamp
 
----
+## 📋 Sheet Structure
 
-## 📋 Features
+### ProfilesData
+Main data sheet containing all scraped profiles. Automatically sorted by scraping date (newest first).
 
-### Core Features
-- 🔄 **Auto-Repeat Mode**: Runs indefinitely with 5-minute delay
-- 👥 **Online Mode**: Scrapes currently online users automatically
-- 📋 **Sheet Mode**: Processes nicknames from RunList
-- ⏱️ **Timing Logs**: Tracks all scraping timestamps
-- 🎯 **Profile Limits**: Manual control via command-line
-- 📊 **Google Sheets**: Real-time updates with proper formatting
+### RunList
+Task management sheet with columns:
+- **Nickname**: User being processed
+- **Status**: Pending/Complete/Failed
+- **Remarks**: Detailed notes about scraping result
+- **Source**: Data source (Online)
 
-### Authentication
-- 🍪 **Cookie-based login** (primary method)
-- 🔑 **Username/password fallback** (automatic)
-- 🔄 **Dual account support** (Account 1 + Account 2)
+### CheckList
+Tags and categories for profile classification.
 
-### Scheduling
-- ⏰ **Automated runs**: Every 8 hours via GitHub Actions
-- 🚀 **Manual runs**: On-demand with custom parameters
-- 🔁 **Repeat mode**: Continuous scraping with delays
+### Dashboard
+Run metrics and statistics:
+- Run number and timestamp
+- Profiles processed/success/failed
+- New/updated/unchanged count
+- Trigger type and duration
 
----
+### NickList
+Tracks online user appearances:
+- Nickname
+- Times seen
+- First seen timestamp
+- Last seen timestamp
 
-## 🛠️ Installation
+## 🚀 Installation
 
-### Local Setup
+### Prerequisites
+- Python 3.8+
+- Chrome/Chromium browser
+- Google Sheets API credentials
+- DamaDam.pk account
+
+### Setup
 
 1. **Clone Repository**
-   ```bash
-   git clone https://github.com/yourusername/DD-Master-Bot.git
-   cd DD-Master-Bot
-   ```
+```bash
+git clone https://github.com/yourusername/DDD-Master-Bot.git
+cd DDD-Master-Bot
+```
 
 2. **Install Dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Setup Environment** (Create `.env` file)
-   ```bash
-   GOOGLE_CREDENTIALS={"type":"service_account",...}
-   SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit
-   DAMADAM_USERNAME=your_username
-   DAMADAM_PASSWORD=your_password
-   DAMADAM_USERNAME_2=backup_username  # Optional
-   DAMADAM_PASSWORD_2=backup_password  # Optional
-   ```
-
-4. **Run Scraper**
-   ```bash
-   python Scraper.py --mode online --limit 10
-   ```
-
----
-
-## 🚀 Usage
-
-### Command Line Options
-
-**Basic Online Mode**
 ```bash
-python Scraper.py --mode online
+pip install -r requirements.txt
 ```
 
-**With Profile Limit**
+3. **Configure Environment Variables**
 ```bash
-python Scraper.py --mode online --limit 50
+# Create .env file
+DAMADAM_USERNAME=your_username
+DAMADAM_PASSWORD=your_password
+DAMADAM_USERNAME_2=backup_username  # Optional
+DAMADAM_PASSWORD_2=backup_password  # Optional
+GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit
+GOOGLE_CREDENTIALS_JSON='{"type":"service_account",...}'
+# OR
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
+
+# Optional Performance Settings
+MAX_PROFILES_PER_RUN=100
+BATCH_SIZE=10
+MIN_DELAY=0.5
+MAX_DELAY=0.7
+PAGE_LOAD_TIMEOUT=30
+SHEET_WRITE_DELAY=1.0
 ```
 
-**Auto-Repeat Mode (Recommended)**
+4. **Setup Google Sheets API**
+- Go to [Google Cloud Console](https://console.cloud.google.com/)
+- Create a new project
+- Enable Google Sheets API
+- Create a service account
+- Download credentials JSON
+- Share your Google Sheet with the service account email
+
+## 🎮 Usage
+
+### Basic Run
 ```bash
-python Scraper.py --mode online --repeat
+python Scraper.py
 ```
 
-**Sheet Mode**
+### With Environment File
 ```bash
-python Scraper.py --mode sheet --limit 100
+export $(cat .env | xargs)
+python Scraper.py
 ```
 
-### Arguments
+### Docker (Optional)
+```bash
+docker build -t ddd-master-bot .
+docker run --env-file .env ddd-master-bot
+```
 
-| Argument | Type | Default | Description |
-|----------|------|---------|-------------|
-| `--mode` | choice | `online` | Run mode: `online` or `sheet` |
-| `--limit` | int | None | Max profiles to process (0 = unlimited) |
-| `--repeat` | flag | False | Enable continuous running with 5-min delay |
+## ⚙️ Configuration
 
----
+### Performance Tuning
 
-## 📊 Google Sheets Structure
+**Batch Size**: Number of profiles before API quota check
+```python
+BATCH_SIZE = 10  # Default
+```
 
-### ProfilesData (A:R - 18 columns)
-Main sheet with all profile information:
-- Nickname, ProfileURL, Image, Tags, LastPost, LastPostTime
-- Friend, City, Gender, Married, Age, Joined, Followers
-- Status, Posts, Intro, Source, LastUpdated
+**Delays**: Adaptive delay between requests (seconds)
+```python
+MIN_DELAY = 0.5
+MAX_DELAY = 0.7
+```
 
-### TimingLog (A:D - 4 columns)
-Timestamp tracking for each scrape:
-- Nickname, Timestamp, Source, Run Number
+**Auto-Optimization**: After 10 profiles, system adjusts:
+```python
+BATCH_SIZE_FACTOR = 1.2      # Increase by 20%
+DELAY_REDUCTION_FACTOR = 0.9  # Reduce by 10%
+```
 
-### NickList (A:D - 4 columns)
-Tracks nickname occurrences:
-- Nickname, Times, FirstSeen, LastSeen
+### Emoji Configuration
 
-### RunList (A:E - 5 columns) [Sheet Mode Only]
-Input sheet for manual scraping:
-- Nickname, Status, Remarks, Tag, Priority
+Customize status indicators:
+```python
+# Marital Status
+EMOJI_MARRIED = "💍"
+EMOJI_MARRIED_LABEL = "💖"
+EMOJI_UNMARRIED = "❌"
+EMOJI_UNMARRIED_LABEL = "💔"
 
-### CheckList (A:D - 4 columns) [Sheet Mode Only]
-Tag management:
-- Tag, Description, Active, Count
+# Verification Status
+EMOJI_VERIFIED = "⬛"
+EMOJI_UNVERIFIED = "⬜"
+```
 
-### Dashboard (A:K - 11 columns)
-Statistics and metrics:
-- Metric, Value, LastRun, TotalProfiles, OnlineUsers, etc.
+## 📈 Output Example
 
----
+```
+================================================================================
+🚀 DamaDam Master Bot v1.0.201 - Starting
+================================================================================
 
-## 🎨 Sheet Formatting
+[14:23:45] 🌐 Setting up Chrome browser...
+[14:23:48] ✅ Chrome ready
+[14:23:49] 🔐 Checking for saved cookies...
+[14:23:52] ✅ Login via cookies successful
+[14:23:53] 👥 Fetching online users...
+[14:23:55] ✅ Found 45 online users
 
-- **Font**: Asimov (row 1: size 9 bold, row 2+: size 8)
-- **Alignment**: Row 1: H:Center V:Middle, Row 2+: H:Left V:Middle
-- **Colors**: None (clean, professional look)
+📊 Processing 45 profiles...
 
----
+✨ [1/45] NEW: username1
+🔄 [2/45] UPDATED: username2
+⏭️ [3/45] UNCHANGED: username3
+...
 
-## 🤖 GitHub Actions Setup
+================================================================================
+📈 RUN SUMMARY
+================================================================================
+Total Profiles:     45
+Processed:          45
+Success:            43
+Failed:             2
+New:                12
+Updated:            18
+Unchanged:          13
+Duration:           234s
+Avg Time/Profile:   5.44s
+================================================================================
 
-### Quick Setup
+[14:28:49] ✅ Run completed successfully
+```
 
-1. **Add GitHub Secrets** (Settings → Secrets → Actions)
-   - `GOOGLE_CREDENTIALS` - Your service account JSON
-   - `SHEET_URL` - Your Google Sheets URL
-   - `DAMADAM_USERNAME` - Your DamaDam username
-   - `DAMADAM_PASSWORD` - Your DamaDam password
-   - `DAMADAM_USERNAME_2` - Backup account (optional)
-   - `DAMADAM_PASSWORD_2` - Backup password (optional)
+## 🔍 Monitoring
 
-2. **Enable Workflow**
-   - Go to Actions tab
-   - Enable workflows if prompted
+### Check RunList Status
+View the RunList sheet to see:
+- Which profiles are Pending/Complete/Failed
+- Detailed remarks for each profile
+- Data source information
 
-3. **Test Run**
-   - Actions → DamaDam Scraper → Run workflow
-   - Mode: `online`, Limit: `10`, Repeat: ❌
+### Dashboard Metrics
+Track performance in Dashboard sheet:
+- Success/failure rates
+- New vs updated profiles
+- Processing duration
+- Trigger information
 
-📖 **Full setup guide**: See [GITHUB_SETUP.md](GITHUB_SETUP.md)
-
-### Scheduled Runs
-
-- **Automatic**: Every 8 hours (00:00, 08:00, 16:00 UTC)
-- **Mode**: Online with repeat enabled
-- **Duration**: Maximum 8 hours per run
-
-### Manual Runs
-
-1. Go to **Actions** → **DamaDam Scraper**
-2. Click **Run workflow**
-3. Select options:
-   - Mode: `online` or `sheet`
-   - Profile Limit: `0` (unlimited) or any number
-   - Repeat Mode: ✅/❌
-
----
-
-## 🔍 How It Works
-
-### Online Mode (Default)
-1. Login with cookies (or username/password fallback)
-2. Fetch online users from `/online_kon/`
-3. Extract nicknames using correct CSS selector
-4. Scrape each profile
-5. Update ProfilesData sheet (not RunList)
-6. Log timing in TimingLog
-7. Update NickList occurrence count
-8. Wait 5 minutes (if repeat mode)
-9. Repeat from step 2
-
-### Sheet Mode
-1. Login
-2. Read pending nicknames from RunList
-3. Scrape each profile
-4. Update ProfilesData
-5. Update RunList status (Done/Pending)
-6. Log timing in TimingLog
-7. Update NickList
-
----
+### NickList Tracking
+Monitor online user frequency:
+- How many times each user was seen
+- First and last appearance timestamps
 
 ## 🐛 Troubleshooting
 
-### Issue: "Found 0 online users"
-**Fixed in v1.0.205!** Now uses correct selector: `li.mbl.cl.sp b`
+### Login Issues
+- Verify credentials in environment variables
+- Check if account is suspended
+- Try backup account (USERNAME_2/PASSWORD_2)
+- Delete `damadam_cookies.pkl` to force fresh login
 
-If still failing:
-1. Check login was successful
-2. View `debug_online_page.html` in artifacts
-3. Verify you're using v1.0.205
+### Google Sheets Errors
+- Verify sheet URL is correct
+- Check service account has sheet access
+- Ensure credentials JSON is valid
+- Check API quota limits
 
-### Issue: "Login failed"
-**Solution**:
-1. Check if secrets are correctly added
-2. Try exporting fresh cookies from browser
-3. Verify Account 1/2 credentials are correct
+### Scraping Failures
+- Verify DamaDam.pk is accessible
+- Check internet connection
+- Increase PAGE_LOAD_TIMEOUT
+- Check for account suspension
 
-### Issue: "Google Sheets API error"
-**Solution**:
-1. Verify GOOGLE_CREDENTIALS is valid JSON
-2. Check service account has edit access
-3. Confirm SHEET_URL is correct
+### Rate Limiting
+- Increase MIN_DELAY and MAX_DELAY
+- Reduce BATCH_SIZE
+- Add delays between runs
+- Check Google API quota
 
-### Issue: "Cookies expired"
-**Solution**: The script automatically falls back to username/password login
+## 📝 Logging
 
----
+Logs include timestamps and status indicators:
+- ✅ Success
+- ❌ Error
+- ⚠️ Warning
+- ℹ️ Information
+- 🔄 Update
+- ✨ New
+- 📊 Metrics
 
-## 📝 Important Notes
+## 🔐 Security
 
-### Online Mode Behavior
-- ✅ Updates **ProfilesData** sheet
-- ❌ Does NOT write to **RunList**
-- ✅ Logs all scrapes to **TimingLog**
-- ✅ Tracks occurrences in **NickList**
-
-### Sheet Mode Behavior
-- ✅ Updates **ProfilesData** sheet
-- ✅ Updates **RunList** status
-- ✅ Logs all scrapes to **TimingLog**
-- ✅ Tracks occurrences in **NickList**
-
-### GitHub Actions Limits
-- Maximum 8-hour execution per run
-- Previous runs cancelled when new run starts
-- Cookies cached between runs
-
----
-
-## 🔒 Security
-
-### Protected Files (Never Commit)
-- ❌ `.env` - Contains credentials
-- ❌ `*.pkl` - Cookie files
-- ❌ `*-master-bot-*.json` - Service account keys
-- ❌ `debug_*.html` - Debug files
-
-### GitHub Secrets
-- ✅ Encrypted and secure
-- ✅ Not visible in logs
-- ✅ Can be updated anytime
-
----
+- Credentials stored in environment variables only
+- Never commit `.env` or credentials files
+- Use service account for Google Sheets
+- Rotate credentials regularly
+- Use separate accounts for testing/production
 
 ## 📦 Requirements
 
-```
-selenium==4.15.2
-gspread==5.12.0
-google-auth==2.24.0
-python-dotenv==1.0.0
-webdriver-manager==4.0.1
-```
-
----
-
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) file for details
-
----
+See `requirements.txt` for dependencies:
+- selenium
+- gspread
+- google-auth-oauthlib
+- google-auth-httplib2
+- python-dotenv
 
 ## 🤝 Contributing
 
-Contributions welcome! Please:
 1. Fork the repository
-2. Create feature branch
-3. Commit your changes
-4. Push to branch
-5. Open Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - See LICENSE file
+
+## 🙏 Support
+
+For issues and questions:
+- Check existing GitHub issues
+- Review troubleshooting section
+- Check logs for error details
+- Contact maintainer
+
+## 🎯 Roadmap
+
+- [ ] Multi-threaded scraping
+- [ ] Proxy support
+- [ ] Advanced filtering options
+- [ ] Data export formats (CSV, JSON)
+- [ ] Web dashboard
+- [ ] Scheduled runs
+- [ ] Webhook notifications
+
+## 📞 Contact
+
+- GitHub: [Your GitHub Profile]
+- Email: your.email@example.com
 
 ---
 
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/DD-Master-Bot/issues)
-- **Documentation**: [GITHUB_SETUP.md](GITHUB_SETUP.md)
-
----
-
-## 🎯 Changelog
-
-### v1.0.205 (Current)
-- ✅ Fixed online user scraping (CSS selector)
-- ✅ Added username/password login fallback
-- ✅ Fixed sheet formatting (Asimov font)
-- ✅ Removed color formatting
-- ✅ Fixed column ranges for all sheets
-- ✅ Enhanced error handling with debug output
-
-### v1.0.202
-- Cookie-based authentication
-- Online and Sheet modes
-- TimingLog tracking
-- Repeat mode
-
----
-
-**Version**: 1.0.205  
-**Last Updated**: December 2025  
-**Status**: ✅ Production Ready
-
----
-
-Made with ❤️ for DamaDam automation
+**Version**: 1.0.201  
+**Last Updated**: 2025-11-30  
+**Status**: Production Ready

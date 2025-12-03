@@ -1,4 +1,5 @@
-# Environment Variables - NEVER COMMIT THESE!
+# Environment Variables
+.env
 .env.local
 .env.*.local
 
@@ -39,22 +40,18 @@ env/
 .DS_Store
 
 # Cookies & Cache
-cache/
 damadam_cookies.pkl
 *.pkl
 .cache/
 
-# Logs & Debug
+# Logs
 *.log
 logs/
-debug_*.html
 
-# Google Credentials - NEVER COMMIT!
+# Google Credentials
 credentials.json
 service-account-key.json
 google-credentials.json
-*-master-bot-*.json
-ddd-master-bot-*.json
 
 # OS
 .DS_Store
@@ -70,8 +67,3 @@ htmlcov/
 output/
 data/
 temp/
-
-# Old/Backup files
-*.bak
-*.old
-MasterBot.py
