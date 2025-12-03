@@ -120,13 +120,14 @@ Statistics and overview (optional).
 
 ```bash
 # Required
-GOOGLE_CREDENTIALS={"type":"service_account",...}
+GOOGLE_CREDENTIALS={"type":"service_account",...}  # JSON string or path to credentials file
 SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit
 
 # Optional
 MAX_PROFILES_PER_RUN=0  # 0 = no limit
 DEFAULT_MODE=online
 REPEAT_DELAY_MINUTES=5
+DAMADAM_COOKIE_FILE=damadam_cookies.pkl  # override the cookie cache filename/path
 ```
 
 ### GitHub Secrets

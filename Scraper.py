@@ -9,9 +9,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 import pickle
 import json
+import traceback
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -35,7 +36,8 @@ class DamaDamScraper:
         self.existing_profiles = {}
         self.tags = []
         self.processed_count = 0
-        
+        self.cookie_file = os.getenv('DAMADAM_COOKIE_FILE', 'damadam_cookies.pkl')
+
         # Initialize Google Sheets
         self._init_sheets()
         
@@ -54,15 +56,14 @@ class DamaDamScraper:
             if not creds_json:
                 raise ValueError("Missing GOOGLE_CREDENTIALS or GOOGLE_CREDENTIALS_JSON environment variable")
             
-            # Handle if it's a file path
-            if creds_json.startswith('/') or creds_json.endswith('.json'):
+            if os.path.isfile(creds_json):
                 with open(creds_json, 'r') as f:
                     creds_dict = json.load(f)
             else:
                 creds_dict = json.loads(creds_json)
-            
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-            self.gc = gspread.authorize(creds)
+
+            credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            self.gc = gspread.authorize(credentials)
             
             # Open the spreadsheet
             sheet_url = os.getenv('SHEET_URL') or os.getenv('GOOGLE_SHEET_URL')
@@ -91,6 +92,7 @@ class DamaDamScraper:
             
         except Exception as e:
             print(f"[{self._timestamp()}] ❌ Error initializing sheets: {e}")
+            print(traceback.format_exc())
             sys.exit(1)
     
     def _get_or_create_timing_sheet(self):
@@ -240,19 +242,15 @@ class DamaDamScraper:
         print(f"[{self._timestamp()}] 🔐 Attempting login...")
         
         # Try cookies first
-        cookie_file = 'damadam_cookies.pkl'
-        if os.path.exists(cookie_file):
-            print(f"[{self._timestamp()}] 📖 Found saved cookies, trying...")
-            if self._try_cookie_login(cookie_file):
+        if os.path.exists(self.cookie_file):
+            print(f"[{self._timestamp()}] 📖 Found saved cookies at {self.cookie_file}, trying...")
+            if self._try_cookie_login(self.cookie_file):
                 return True
         
         # Fall back to username/password
         print(f"[{self._timestamp()}] 🔑 No valid cookies, trying credentials...")
         return self._login_with_credentials()
     
-    def _try_cookie_login(self, cookie_file):
-        """Try to login with saved cookies"""
-        
     def _try_cookie_login(self, cookie_file):
         """Try to login with saved cookies"""
         try:
@@ -337,7 +335,7 @@ class DamaDamScraper:
         """Save current session cookies"""
         try:
             cookies = self.driver.get_cookies()
-            with open('damadam_cookies.pkl', 'wb') as f:
+            with open(self.cookie_file, 'wb') as f:
                 pickle.dump(cookies, f)
             print(f"[{self._timestamp()}] 💾 Cookies saved for future use")
         except Exception as e:
