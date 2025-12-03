@@ -300,9 +300,11 @@ class DamaDamScraper:
             
             # Find and fill login form
             username_field = self.wait.until(
-                EC.presence_of_element_located((By.NAME, "nick"))
+                EC.presence_of_element_located((By.ID, "nick"))
             )
-            password_field = self.driver.find_element(By.NAME, "pass")
+            password_field = self.wait.until(
+                EC.presence_of_element_located((By.ID, "pass"))
+            )
             submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
             
             username_field.clear()
@@ -327,6 +329,9 @@ class DamaDamScraper:
                 print(f"[{self._timestamp()}] ❌ Login failed - check credentials")
                 return False
                 
+        except TimeoutException as e:
+            print(f"[{self._timestamp()}] ❌ Login error: missing form field: {e}")
+            return False
         except Exception as e:
             print(f"[{self._timestamp()}] ❌ Login error: {e}")
             return False
