@@ -297,14 +297,11 @@ class DamaDamScraper:
         try:
             self.driver.get('https://damadam.pk/login')
             time.sleep(3)
+            self._wait_for_login_form()
             
             # Find and fill login form
-            username_field = self.wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "#nick, input[name='username'], input[name='nick']"))
-            )
-            password_field = self.wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "#pass, input[name='password'], input[name='pass']"))
-            )
+            username_field = self._find_login_field(["#nick", "input[name='username']", "input[name='nick']"], "username")
+            password_field = self._find_login_field(["#pass", "input[name='password']", "input[name='pass']", "input[type='password']"], "password")
             submit_button = self.wait.until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "form button[type='submit'], button[type='submit']"))
             )
@@ -333,6 +330,9 @@ class DamaDamScraper:
                 
         except TimeoutException as e:
             print(f"[{self._timestamp()}] ❌ Login error: missing form field: {e}")
+            print(f"[{self._timestamp()}] ℹ️ Current URL: {self.driver.current_url}")
+            snippet = self.driver.page_source[:500].replace('\n', ' ')
+            print(f"[{self._timestamp()}] ℹ️ Page snippet: {snippet}")
             return False
         except Exception as e:
             print(f"[{self._timestamp()}] ❌ Login error: {e}")
@@ -347,6 +347,23 @@ class DamaDamScraper:
             print(f"[{self._timestamp()}] 💾 Cookies saved for future use")
         except Exception as e:
             print(f"[{self._timestamp()}] ⚠️ Failed to save cookies: {e}")
+
+    def _wait_for_login_form(self):
+        selectors = ["form[action='/login/']", "form[action*='/login']"]
+        form_selector = ",".join(selectors)
+        WebDriverWait(self.driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, form_selector))
+        )
+
+    def _find_login_field(self, selectors, friendly_name):
+        for selector in selectors:
+            try:
+                element = self.driver.find_element(By.CSS_SELECTOR, selector)
+                if element:
+                    return element
+            except NoSuchElementException:
+                continue
+        raise NoSuchElementException(f"Could not locate {friendly_name} field using selectors: {selectors}")
     
     def _load_existing_profiles(self):
         """Load existing profiles from ProfilesData"""
