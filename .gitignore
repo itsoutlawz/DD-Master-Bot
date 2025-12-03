@@ -1,6 +1,10 @@
 # Environment Variables
 .env.local
 .env.*.local
+.env
+*.pkl
+*.json
+cache/
 
 # Python
 __pycache__/
