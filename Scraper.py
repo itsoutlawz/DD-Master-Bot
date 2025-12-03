@@ -300,12 +300,14 @@ class DamaDamScraper:
             
             # Find and fill login form
             username_field = self.wait.until(
-                EC.presence_of_element_located((By.ID, "nick"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#nick, input[name='username'], input[name='nick']"))
             )
             password_field = self.wait.until(
-                EC.presence_of_element_located((By.ID, "pass"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#pass, input[name='password'], input[name='pass']"))
             )
-            submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+            submit_button = self.wait.until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "form button[type='submit'], button[type='submit']"))
+            )
             
             username_field.clear()
             username_field.send_keys(username)
