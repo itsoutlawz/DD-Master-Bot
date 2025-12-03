@@ -349,34 +349,38 @@ class DamaDamScraper:
         return False
     
     def _attempt_login(self, username, password):
-        """Attempt login with credentials"""
+        """Attempt login with credentials - FIXED for DamaDam form"""
         try:
-            self.driver.get('https://damadam.pk/login')
+            self.driver.get('https://damadam.pk/login/')
             time.sleep(3)
             
-            # Find and fill username
-            username_field = self.wait.until(
-                EC.presence_of_element_located((By.NAME, "nick"))
-            )
+            # Wait for form to load
+            self.wait.until(EC.presence_of_element_located((By.NAME, "username")))
+            
+            # Find and fill username (name="username", id="nick")
+            username_field = self.driver.find_element(By.NAME, "username")
             username_field.clear()
             username_field.send_keys(username)
             time.sleep(0.5)
             
-            # Find and fill password
-            password_field = self.driver.find_element(By.NAME, "pass")
+            # Find and fill password (name="password", id="pass")
+            password_field = self.driver.find_element(By.NAME, "password")
             password_field.clear()
             password_field.send_keys(password)
             time.sleep(0.5)
             
-            # Submit
+            # Submit form (button with "LOGIN" text)
             submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
             submit_button.click()
             time.sleep(5)
             
+            # Check if login successful
             return self._verify_login()
             
         except Exception as e:
             print(f"[{self._timestamp()}] ❌ Login error: {e}")
+            import traceback
+            print(traceback.format_exc())
             return False
     
     # ==================== SCRAPING LOGIC (FIXED) ====================
