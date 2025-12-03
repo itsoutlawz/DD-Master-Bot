@@ -1,4 +1,4 @@
-name: DamaDam Scraper
+name: DamaDam Scraper v1.0.205
 
 on:
   schedule:
@@ -39,18 +39,13 @@ jobs:
     timeout-minutes: 480  # 8 hours max
     
     steps:
-      - name: 🔄 Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.11.0
-        with:
-          access_token: ${{ github.token }}
-      
       - name: 📥 Checkout Code
         uses: actions/checkout@v3
       
       - name: 🍪 Restore Cookies Cache
         uses: actions/cache@v3
         with:
-          path: damadam_cookies.pkl
+          path: cache/
           key: damadam-cookies-${{ github.run_id }}
           restore-keys: |
             damadam-cookies-
@@ -84,28 +79,34 @@ jobs:
           EOF
           
           echo "✅ Environment file created"
-          echo "Checking environment variables..."
+          echo "Checking required secrets..."
+          
           if [ -z "${{ secrets.GOOGLE_CREDENTIALS }}" ]; then
-            echo "❌ ERROR: GOOGLE_CREDENTIALS secret is not set!"
+            echo "❌ ERROR: GOOGLE_CREDENTIALS secret is missing!"
             exit 1
           fi
+          
           if [ -z "${{ secrets.SHEET_URL }}" ]; then
-            echo "❌ ERROR: SHEET_URL secret is not set!"
+            echo "❌ ERROR: SHEET_URL secret is missing!"
             exit 1
           fi
+          
           if [ -z "${{ secrets.DAMADAM_USERNAME }}" ]; then
-            echo "❌ ERROR: DAMADAM_USERNAME secret is not set!"
+            echo "❌ ERROR: DAMADAM_USERNAME secret is missing!"
             exit 1
           fi
+          
           if [ -z "${{ secrets.DAMADAM_PASSWORD }}" ]; then
-            echo "❌ ERROR: DAMADAM_PASSWORD secret is not set!"
+            echo "❌ ERROR: DAMADAM_PASSWORD secret is missing!"
             exit 1
           fi
+          
           echo "✅ All required secrets are present"
       
-      - name: 🚀 Run Scraper (Scheduled - Auto Mode)
+      - name: 🚀 Run Scraper (Scheduled - Online Mode)
         if: github.event_name == 'schedule'
         run: |
+          echo "Running scheduled scraper in online mode with repeat..."
           python Scraper.py --mode online --repeat
       
       - name: 🚀 Run Scraper (Manual)
@@ -128,19 +129,35 @@ jobs:
           echo "Running: $CMD"
           $CMD
       
-      - name: 📊 Summary
+      - name: 📊 Upload Debug Files
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: debug-files
+          path: |
+            debug_*.html
+            *.log
+          retention-days: 7
+          if-no-files-found: ignore
+      
+      - name: 📊 Job Summary
         if: always()
         run: |
           echo "## 📊 Scraper Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: v1.0.205" >> $GITHUB_STEP_SUMMARY
           echo "- **Mode**: ${{ github.event.inputs.mode || 'online (scheduled)' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Profile Limit**: ${{ github.event.inputs.profile_limit || 'No limit' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Repeat Mode**: ${{ github.event.inputs.repeat_mode || 'true (scheduled)' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Run Time**: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Debug Info" >> $GITHUB_STEP_SUMMARY
+          echo "Check artifacts for debug files if errors occurred." >> $GITHUB_STEP_SUMMARY
       
       - name: 🍪 Save Cookies Cache
         if: always()
         uses: actions/cache/save@v3
         with:
-          path: damadam_cookies.pkl
+          path: cache/
           key: damadam-cookies-${{ github.run_id }}
