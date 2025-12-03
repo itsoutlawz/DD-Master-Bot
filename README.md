@@ -1,112 +1,192 @@
-# DamaDam Master Bot v1.0.210
+# 🚀 DamaDam Master Bot v1.0.201
 
-Professional scraping bot for DamaDam.pk with Google Sheets automation, timing records, and flexible run modes.
+Automated profile scraper for DamaDam.pk with Google Sheets integration.
 
-## Key Enhancements
+## ✨ Features
 
-- **TimingLog sheet** captures every profile scrape with Nickname, Timestamp, Source, and Run Number.
-- **Auto-repeat** runs detect the repeat interval (default 5 minutes) and keep the browser loop active without touching RunList in online mode.
-- **ProfilesData-only updates in online mode** ensure the task sheet stays untouched while the RunList workflow continues to drive manual tasks.
-- **Consistent formatting** colors only data rows so headers remain readable and uniform across sheets.
-- **Command-line + environment limits** let manual runs cap processed profiles without changing scheduled behavior.
+- 🔄 **Auto-Repeat Mode**: Runs indefinitely with 5-minute delay after completion
+- 👥 **Online Mode**: Scrapes currently online users automatically
+- 📋 **Sheet Mode**: Processes nicknames from RunList sheet
+- ⏱️ **Timing Logs**: Tracks all scraping timestamps in dedicated sheet
+- 🎯 **Profile Limits**: Manual control via command-line or workflow
+- 📊 **Google Sheets**: Real-time updates with proper formatting
+- ⏰ **8-Hour Schedule**: GitHub Actions runs every 8 hours automatically
 
-## Data Model & Sheets
+## 📋 Requirements
 
-### ProfilesData
+- Python 3.10+
+- Chrome/Chromium browser
+- Google Service Account with Sheets API access
+- DamaDam.pk cookies (for authentication)
 
-All scraped profiles land here; updates happen in place so the newest data is always current. The bot deduplicates on `NICK NAME` before writing a row.
+## 🛠️ Installation
 
-### TimingLog
+1. **Clone Repository**
+   ```bash
+   git clone https://github.com/yourusername/DD-Master-Bot.git
+   cd DD-Master-Bot
+   ```
 
-New rows capture every scrape. Columns: `Nickname | Timestamp | Source | Run Number`. This sheet exists solely for timing audit trails, so changing the order of those columns will break the logging helpers.
-
-### RunList
-
-Used only when `--mode sheet` (or RUN_MODE=sheet). The bot marks rows Complete/Failed, but online mode never updates this sheet and only writes to ProfilesData + TimingLog.
-
-### Dashboard
-
-Stores metrics such as `Run Number`, `Profiles Processed`, `Last Run`, and `Run Duration`. Renaming these keys requires updating the bot’s dashboard helpers.
-
-### NickList
-
-Tracks how often each nick appears online. This sheet remains untouched unless additional logic is added.
-
-## Installation
-
-### Prerequisites
-
-- Python 3.11+ (tested)
-- Chrome / Chromium with a matching webdriver
-- Google Sheets API credentials
-- Valid DamaDam cookies stored in `DAMADAM_COOKIES_TXT`
-
-### Setup
-
-1. Install dependencies.
-
+2. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-2. Copy `.env.example` to `.env` and fill in the secrets.
-
-3. Run the scraper manually for verification.
-
+3. **Setup Environment**
    ```bash
-   python Scraper.py --mode online --limit 20
+   cp .env.example .env
+   # Edit .env with your credentials
    ```
 
-## Configuration
+4. **Add Cookies**
+   - Login to DamaDam.pk in your browser
+   - Export cookies and save as `cookies.pkl`
 
-Store secrets in `.env` or in the environment:
+## 🚀 Usage
 
-| Variable | Purpose | Effect if changed |
-| --- | --- | --- |
-| `GOOGLE_SHEET_URL` | Target Google Sheet | Points the bot at a different workbook. |
-| `GOOGLE_CREDENTIALS_JSON` | Raw service account JSON | Changing this requires re-sharing the sheet with the new account. |
-| `DAMADAM_COOKIES_TXT` | Login cookies | Must stay in Netscape format; invalid cookies stop the bot. |
-| `MAX_PROFILES_PER_RUN` | Manual cap per run (0 = unlimited) | Setting a number limits how many ProfilesData entries are touched. |
-| `REPEAT_INTERVAL_MINUTES` | Delay between auto repeats | Lowering it means faster loops; keep workflow timeout in sync. |
-| `AUTO_REPEAT` | Enables the auto-repeat loop | False means the script exits after one run. |
-| `RUN_MODE` | `online` or `sheet` default | Online mode ignores RunList writes; sheet mode updates RunList. |
-| `SHEET_WRITE_DELAY` | Pause after writes | Increase when hitting Sheets rate limits. |
+### Command Line
 
-## Usage
+**Basic Online Mode (No Limit)**
+```bash
+python Scraper.py --mode online
+```
 
-- **Manual (local or workflow)**
+**With Profile Limit**
+```bash
+python Scraper.py --mode online --limit 50
+```
 
-   ```bash
-   python Scraper.py --mode online --limit 30
-   python Scraper.py --mode sheet --limit 10
-   ```
+**Auto-Repeat Mode (Recommended)**
+```bash
+python Scraper.py --mode online --repeat
+```
 
-   Manual runs obey `--limit` and `MAX_PROFILES_PER_RUN`. Use `--auto-repeat --repeat-interval 5` to keep looping locally.
+**Sheet Mode**
+```bash
+python Scraper.py --mode sheet --limit 100
+```
 
-- **Auto / Scheduler-friendly**
+### GitHub Actions (Automated)
 
-   ```bash
-   python Scraper.py --mode online
-   ```
+**Scheduled Runs**
+- Automatically runs every 8 hours
+- Uses online mode with repeat enabled
+- No profile limit (processes all online users)
+- Runs for maximum 8 hours per execution
 
-   The job reads `AUTO_REPEAT` and `REPEAT_INTERVAL_MINUTES` from the environment. It sleeps for the configured interval after every loop and repeats until the process ends (GitHub caps runs at 8 hours). Changing the interval requires aligning workflow timeouts.
+**Manual Workflow**
+1. Go to Actions tab → DamaDam Scraper
+2. Click "Run workflow"
+3. Choose options:
+   - **Mode**: online or sheet
+   - **Profile Limit**: 0 = no limit
+   - **Repeat Mode**: Enable for continuous running
 
-## Scheduling & Automation
+## 📊 Google Sheets Structure
 
-The GitHub workflow runs every 8 hours, cancels any in-flight job, and respects an 8-hour timeout. Scheduled runs force `AUTO_REPEAT=true` and `REPEAT_INTERVAL_MINUTES=5`, so the browser loop keeps refreshing online profiles every 5 minutes until the job hits the timeout. Manual workflow dispatch accepts `run_mode`, `max_profiles`, and the `auto_repeat` toggle.
+### ProfilesData
+Main sheet containing all scraped profile information. Updated for both online and sheet modes.
 
-## Troubleshooting
+### TimingLog (New!)
+Records every scraping event with:
+- Nickname
+- Timestamp
+- Source (online/sheet)
+- Run Number (unique identifier)
 
-- **Login failures**: Regenerate `DAMADAM_COOKIES_TXT` and ensure the domain matches `damadam.pk`.
-- **Sheets errors**: Confirm the service account email has edit access.
-- **RunList data**: RunList rows are only updated in `sheet` mode; online mode writes to ProfilesData and TimingLog only.
+### NickList
+Tracks nickname occurrences:
+- Nickname
+- Times Seen
+- First Seen
+- Last Seen
 
-## Logging
+### RunList (Sheet Mode Only)
+Input sheet for manual scraping lists. Only used when running in sheet mode.
 
-- Terminal logs include `[HH:MM:SS]` timestamps.
-- TimingLog keeps per-profile records for auditing.
-- Dashboard metrics show run duration and processed counts.
+### Dashboard
+Statistics and overview (optional).
 
-## License
+## 🎨 Sheet Formatting
 
-MIT License — see `LICENSE`.
+- ✅ Header row with blue background and white text
+- ✅ Alternating row colors (white/light gray) starting from row 2
+- ✅ Consistent formatting across all sheets
+- ✅ No duplicate banding issues
+
+## ⚙️ Configuration
+
+### Environment Variables (.env)
+
+```bash
+# Required
+GOOGLE_CREDENTIALS={"type":"service_account",...}
+SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit
+
+# Optional
+MAX_PROFILES_PER_RUN=0  # 0 = no limit
+DEFAULT_MODE=online
+REPEAT_DELAY_MINUTES=5
+```
+
+### GitHub Secrets
+
+Set these in Repository Settings → Secrets:
+- `GOOGLE_CREDENTIALS`: Your service account JSON
+- `SHEET_URL`: Your Google Sheets URL
+
+## 🔄 How It Works
+
+### Online Mode (Default)
+1. Scrapes DamaDam.pk/online page
+2. Extracts all online user nicknames
+3. Scrapes each profile
+4. Updates **ProfilesData** only (no RunList updates)
+5. Logs timing in **TimingLog**
+6. Updates occurrence count in **NickList**
+7. Waits 5 minutes after completion
+8. Repeats (if repeat mode enabled)
+
+### Sheet Mode
+1. Reads pending nicknames from **RunList**
+2. Scrapes each profile
+3. Updates **ProfilesData**
+4. Updates **RunList** status (Done/Pending)
+5. Logs timing in **TimingLog**
+6. Updates **NickList**
+
+## 📝 Important Notes
+
+- ⚠️ **Online mode does NOT write to RunList** (only ProfilesData)
+- ⚠️ GitHub Actions has 8-hour execution limit
+- ⚠️ Scheduled runs use repeat mode automatically
+- ⚠️ Previous workflow runs are cancelled when new run starts
+- ✅ All timing data preserved in TimingLog sheet
+- ✅ Profile limit only applies to manual runs
+
+## 🐛 Troubleshooting
+
+**Issue: "No cookies found"**
+- Solution: Add `cookies.pkl` file with valid DamaDam cookies
+
+**Issue: "Google Sheets API error"**
+- Solution: Check GOOGLE_CREDENTIALS format and permissions
+
+**Issue: "Banding already applied"**
+- Solution: Fixed! Formatting now starts from row 2
+
+**Issue: "GitHub Actions timeout"**
+- Solution: Normal after 8 hours, next run will continue
+
+## 📄 License
+
+MIT License - See LICENSE file for details
+
+## 👨‍💻 Author
+
+Your Name - DamaDam Master Bot
+
+---
+
+**Version**: 1.0.201  
+**Last Updated**: December 2025
