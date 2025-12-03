@@ -66,8 +66,22 @@ jobs:
       
       - name: 📋 Create .env File
         run: |
-          echo "GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }}" >> .env
-          echo "SHEET_URL=${{ secrets.SHEET_URL }}" >> .env
+          cat > .env << 'EOF'
+          GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }}
+          SHEET_URL=${{ secrets.SHEET_URL }}
+          EOF
+          
+          echo "✅ Environment file created"
+          echo "Checking environment variables..."
+          if [ -z "${{ secrets.GOOGLE_CREDENTIALS }}" ]; then
+            echo "❌ ERROR: GOOGLE_CREDENTIALS secret is not set!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SHEET_URL }}" ]; then
+            echo "❌ ERROR: SHEET_URL secret is not set!"
+            exit 1
+          fi
+          echo "✅ All required secrets are present"
       
       - name: 🚀 Run Scraper (Scheduled - Auto Mode)
         if: github.event_name == 'schedule'

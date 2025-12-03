@@ -48,12 +48,28 @@ class DamaDamScraper:
             scope = ['https://spreadsheets.google.com/feeds',
                     'https://www.googleapis.com/auth/drive']
             
-            creds_dict = json.loads(os.getenv('GOOGLE_CREDENTIALS'))
+            # Try GOOGLE_CREDENTIALS_JSON first (legacy), then GOOGLE_CREDENTIALS
+            creds_json = os.getenv('GOOGLE_CREDENTIALS_JSON') or os.getenv('GOOGLE_CREDENTIALS')
+            
+            if not creds_json:
+                raise ValueError("Missing GOOGLE_CREDENTIALS or GOOGLE_CREDENTIALS_JSON environment variable")
+            
+            # Handle if it's a file path
+            if creds_json.startswith('/') or creds_json.endswith('.json'):
+                with open(creds_json, 'r') as f:
+                    creds_dict = json.load(f)
+            else:
+                creds_dict = json.loads(creds_json)
+            
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
             self.gc = gspread.authorize(creds)
             
             # Open the spreadsheet
-            sheet_url = os.getenv('SHEET_URL')
+            sheet_url = os.getenv('SHEET_URL') or os.getenv('GOOGLE_SHEET_URL')
+            
+            if not sheet_url:
+                raise ValueError("Missing SHEET_URL or GOOGLE_SHEET_URL environment variable")
+            
             self.spreadsheet = self.gc.open_by_url(sheet_url)
             
             # Get worksheets
