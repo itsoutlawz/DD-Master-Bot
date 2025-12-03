@@ -14,6 +14,7 @@ import pickle
 import json
 import traceback
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Load environment variables
 load_dotenv()
@@ -22,9 +23,9 @@ class DamaDamScraper:
     def __init__(self, run_mode='online', profile_limit=None):
         self.run_mode = run_mode.lower()
         self.profile_limit = profile_limit
-        self.run_number = int(time.time())  # Unique run identifier
+        self.run_number = int(time.time())
         
-        print(f"🚀 DamaDam Master Bot v1.0.201 - Starting")
+        print(f"🚀 DamaDam Master Bot v1.0.202 - Starting")
         print("=" * 80)
         print(f"[{self._timestamp()}] 📋 Run Mode: {self.run_mode.upper()}")
         if self.profile_limit:
@@ -36,8 +37,12 @@ class DamaDamScraper:
         self.existing_profiles = {}
         self.tags = []
         self.processed_count = 0
-        self.cookie_file = os.getenv('DAMADAM_COOKIE_FILE', 'damadam_cookies.pkl')
-
+        
+        # Setup cache directory
+        self.cache_dir = Path('cache')
+        self.cache_dir.mkdir(exist_ok=True)
+        self.cookie_file = self.cache_dir / 'damadam_cookies.pkl'
+        
         # Initialize Google Sheets
         self._init_sheets()
         
@@ -50,11 +55,10 @@ class DamaDamScraper:
             scope = ['https://spreadsheets.google.com/feeds',
                     'https://www.googleapis.com/auth/drive']
             
-            # Try GOOGLE_CREDENTIALS_JSON first (legacy), then GOOGLE_CREDENTIALS
             creds_json = os.getenv('GOOGLE_CREDENTIALS_JSON') or os.getenv('GOOGLE_CREDENTIALS')
             
             if not creds_json:
-                raise ValueError("Missing GOOGLE_CREDENTIALS or GOOGLE_CREDENTIALS_JSON environment variable")
+                raise ValueError("Missing GOOGLE_CREDENTIALS environment variable")
             
             if os.path.isfile(creds_json):
                 with open(creds_json, 'r') as f:
@@ -65,11 +69,10 @@ class DamaDamScraper:
             credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
             self.gc = gspread.authorize(credentials)
             
-            # Open the spreadsheet
             sheet_url = os.getenv('SHEET_URL') or os.getenv('GOOGLE_SHEET_URL')
             
             if not sheet_url:
-                raise ValueError("Missing SHEET_URL or GOOGLE_SHEET_URL environment variable")
+                raise ValueError("Missing SHEET_URL environment variable")
             
             self.spreadsheet = self.gc.open_by_url(sheet_url)
             
@@ -77,7 +80,6 @@ class DamaDamScraper:
             self.profiles_ws = self.spreadsheet.worksheet('ProfilesData')
             self.timing_ws = self._get_or_create_timing_sheet()
             
-            # Only get RunList if in sheet mode
             if self.run_mode == 'sheet':
                 self.runlist_ws = self.spreadsheet.worksheet('RunList')
                 self.checklist_ws = self.spreadsheet.worksheet('CheckList')
@@ -85,7 +87,6 @@ class DamaDamScraper:
             self.nicklist_ws = self.spreadsheet.worksheet('NickList')
             self.dashboard_ws = self.spreadsheet.worksheet('Dashboard')
             
-            # Apply formatting to all sheets
             self._apply_consistent_formatting()
             
             print(f"[{self._timestamp()}] ✅ Google Sheets connected")
@@ -102,7 +103,6 @@ class DamaDamScraper:
             print(f"[{self._timestamp()}] ℹ️ TimingLog sheet found")
         except gspread.exceptions.WorksheetNotFound:
             ws = self.spreadsheet.add_worksheet(title='TimingLog', rows=1000, cols=4)
-            # Add headers
             ws.update('A1:D1', [['Nickname', 'Timestamp', 'Source', 'Run Number']], value_input_option='USER_ENTERED')
             self._format_sheet(ws, has_header=True)
             print(f"[{self._timestamp()}] ✅ TimingLog sheet created")
@@ -125,13 +125,12 @@ class DamaDamScraper:
             self._format_sheet(ws, has_header=True)
     
     def _format_sheet(self, worksheet, has_header=True):
-        """Apply proper formatting to sheet - banding starts from row 2"""
+        """Apply proper formatting to sheet"""
         try:
             sheet_id = worksheet._properties['sheetId']
             
-            # Try to delete existing banding (ignore if doesn't exist)
+            # Clear existing banding
             try:
-                # Get all banding ranges
                 sheet_metadata = self.spreadsheet.fetch_sheet_metadata()
                 for sheet in sheet_metadata.get('sheets', []):
                     if sheet['properties']['sheetId'] == sheet_id:
@@ -144,12 +143,10 @@ class DamaDamScraper:
                             }
                             self.spreadsheet.batch_update({"requests": [delete_request]})
                             print(f"[{self._timestamp()}] 🧹 Cleared existing banding")
-            except Exception as e:
-                # No banding to delete or other error - that's fine
+            except:
                 pass
             
-            # Apply new banding (starting from row 2 to skip header)
-            start_row = 1 if has_header else 0  # Row 2 in 0-indexed = 1
+            start_row = 1 if has_header else 0
             
             banding_request = {
                 "addBanding": {
@@ -183,7 +180,6 @@ class DamaDamScraper:
             
             self.spreadsheet.batch_update({"requests": [banding_request]})
             
-            # Format header row if exists
             if has_header:
                 header_format = {
                     "requests": [{
@@ -237,27 +233,27 @@ class DamaDamScraper:
         
         print(f"[{self._timestamp()}] ✅ Chrome ready")
     
-    def _login_with_cookies(self):
-        """Login using saved cookies or credentials"""
-        print(f"[{self._timestamp()}] 🔐 Attempting login...")
-        
-        # Try cookies first
-        if os.path.exists(self.cookie_file):
-            print(f"[{self._timestamp()}] 📖 Found saved cookies at {self.cookie_file}, trying...")
-            if self._try_cookie_login(self.cookie_file):
-                return True
-        
-        # Fall back to username/password
-        print(f"[{self._timestamp()}] 🔑 No valid cookies, trying credentials...")
-        return self._login_with_credentials()
+    # ==================== COOKIE MANAGEMENT ====================
     
-    def _try_cookie_login(self, cookie_file):
-        """Try to login with saved cookies"""
+    def _save_cookies(self):
+        """Save cookies to cache directory"""
         try:
-            self.driver.get('https://damadam.pk')
-            time.sleep(2)
+            cookies = self.driver.get_cookies()
+            with open(self.cookie_file, 'wb') as f:
+                pickle.dump(cookies, f)
+            print(f"[{self._timestamp()}] 💾 Saved {len(cookies)} cookies to cache/")
+            return True
+        except Exception as e:
+            print(f"[{self._timestamp()}] ⚠️ Failed to save cookies: {e}")
+            return False
+    
+    def _load_cookies(self):
+        """Load cookies from cache directory"""
+        try:
+            if not self.cookie_file.exists():
+                return False
             
-            with open(cookie_file, 'rb') as f:
+            with open(self.cookie_file, 'rb') as f:
                 cookies = pickle.load(f)
             
             for cookie in cookies:
@@ -268,44 +264,181 @@ class DamaDamScraper:
                 except:
                     pass
             
-            print(f"[{self._timestamp()}] 📖 Loaded {len(cookies)} cookies")
+            print(f"[{self._timestamp()}] 📖 Loaded {len(cookies)} cookies from cache/")
+            return True
             
+        except Exception as e:
+            print(f"[{self._timestamp()}] ⚠️ Cookie load failed: {e}")
+            return False
+    
+    def _clear_cookies(self):
+        """Clear expired cookies"""
+        try:
+            if self.cookie_file.exists():
+                self.cookie_file.unlink()
+                print(f"[{self._timestamp()}] 🗑️ Cleared expired cookies")
+        except Exception as e:
+            print(f"[{self._timestamp()}] ⚠️ Cookie clear failed: {e}")
+    
+    def _verify_login(self):
+        """Verify if user is logged in"""
+        try:
+            page_source = self.driver.page_source.lower()
+            current_url = self.driver.current_url.lower()
+            
+            # Check multiple indicators
+            is_logged_in = (
+                'logout' in page_source or
+                '/logout' in page_source or
+                'login' not in current_url
+            )
+            
+            return is_logged_in
+        except:
+            return False
+    
+    # ==================== LOGIN SYSTEM ====================
+    
+    def _login_with_cookies(self):
+        """Try login with saved cookies"""
+        print(f"[{self._timestamp()}] 🔐 Attempting login...")
+        
+        if not self.cookie_file.exists():
+            print(f"[{self._timestamp()}] ℹ️ No saved cookies found")
+            return self._login_with_credentials()
+        
+        try:
+            print(f"[{self._timestamp()}] 📖 Found cookies, trying...")
+            
+            # Load homepage first
+            self.driver.get('https://damadam.pk')
+            time.sleep(2)
+            
+            # Load cookies
+            if not self._load_cookies():
+                return self._login_with_credentials()
+            
+            # Refresh to apply cookies
             self.driver.refresh()
             time.sleep(3)
             
             # Verify login
-            if "logout" in self.driver.page_source.lower() or "/logout" in self.driver.page_source.lower():
+            if self._verify_login():
                 print(f"[{self._timestamp()}] ✅ Login via cookies successful")
                 return True
             else:
                 print(f"[{self._timestamp()}] ⚠️ Cookies expired")
-                return False
+                self._clear_cookies()
+                return self._login_with_credentials()
                 
         except Exception as e:
-            print(f"[{self._timestamp()}] ⚠️ Cookie login failed: {e}")
-            return False
+            print(f"[{self._timestamp()}] ⚠️ Cookie login error: {e}")
+            return self._login_with_credentials()
     
     def _login_with_credentials(self):
-        """Login using username and password from environment"""
-        username = os.getenv('DAMADAM_USERNAME')
-        password = os.getenv('DAMADAM_PASSWORD')
+        """Try login with credentials - Account 1 then Account 2"""
+        print(f"[{self._timestamp()}] 🔑 Trying credential login...")
         
-        if not username or not password:
-            print(f"[{self._timestamp()}] ❌ DAMADAM_USERNAME and DAMADAM_PASSWORD not set")
-            return False
+        # Get credentials
+        accounts = [
+            ("Account 1", os.getenv('DAMADAM_USERNAME'), os.getenv('DAMADAM_PASSWORD')),
+            ("Account 2", os.getenv('DAMADAM_USERNAME_2'), os.getenv('DAMADAM_PASSWORD_2'))
+        ]
         
+        for account_name, username, password in accounts:
+            if not username or not password:
+                continue
+            
+            print(f"[{self._timestamp()}] 🔐 Trying {account_name}...")
+            
+            if self._attempt_login(username, password):
+                print(f"[{self._timestamp()}] ✅ Login successful with {account_name}")
+                self._save_cookies()
+                return True
+            else:
+                print(f"[{self._timestamp()}] ❌ {account_name} failed, trying next...")
+        
+        print(f"[{self._timestamp()}] ❌ All login attempts failed")
+        return False
+    
+    def _attempt_login(self, username, password):
+        """Attempt login with given credentials"""
         try:
+            # Go to login page
             self.driver.get('https://damadam.pk/login')
             time.sleep(3)
-            self._wait_for_login_form()
             
-            # Find and fill login form
-            username_field = self._find_login_field(["#nick", "input[name='username']", "input[name='nick']"], "username")
-            password_field = self._find_login_field(["#pass", "input[name='password']", "input[name='pass']", "input[type='password']"], "password")
-            submit_button = self.wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "form button[type='submit'], button[type='submit']"))
+            # Wait for login form
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "form"))
             )
             
+            # Find username field - try multiple selectors
+            username_field = None
+            username_selectors = [
+                "#nick",
+                "input[name='nick']",
+                "input[name='username']",
+                "input[placeholder*='Nick']",
+                "input[placeholder*='Username']"
+            ]
+            
+            for selector in username_selectors:
+                try:
+                    username_field = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if username_field:
+                        break
+                except NoSuchElementException:
+                    continue
+            
+            if not username_field:
+                print(f"[{self._timestamp()}] ❌ Username field not found")
+                return False
+            
+            # Find password field
+            password_field = None
+            password_selectors = [
+                "#pass",
+                "input[name='pass']",
+                "input[name='password']",
+                "input[type='password']"
+            ]
+            
+            for selector in password_selectors:
+                try:
+                    password_field = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if password_field:
+                        break
+                except NoSuchElementException:
+                    continue
+            
+            if not password_field:
+                print(f"[{self._timestamp()}] ❌ Password field not found")
+                return False
+            
+            # Find submit button
+            submit_button = None
+            button_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "form button",
+                ".btn-login",
+                ".submit-btn"
+            ]
+            
+            for selector in button_selectors:
+                try:
+                    submit_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if submit_button:
+                        break
+                except NoSuchElementException:
+                    continue
+            
+            if not submit_button:
+                print(f"[{self._timestamp()}] ❌ Submit button not found")
+                return False
+            
+            # Fill and submit
             username_field.clear()
             username_field.send_keys(username)
             time.sleep(0.5)
@@ -318,52 +451,16 @@ class DamaDamScraper:
             time.sleep(5)
             
             # Verify login
-            if "logout" in self.driver.page_source.lower() or "/logout" in self.driver.page_source.lower():
-                print(f"[{self._timestamp()}] ✅ Login successful")
-                
-                # Save cookies for next time
-                self._save_cookies()
-                return True
-            else:
-                print(f"[{self._timestamp()}] ❌ Login failed - check credentials")
-                return False
-                
-        except TimeoutException as e:
-            print(f"[{self._timestamp()}] ❌ Login error: missing form field: {e}")
-            print(f"[{self._timestamp()}] ℹ️ Current URL: {self.driver.current_url}")
-            snippet = self.driver.page_source[:500].replace('\n', ' ')
-            print(f"[{self._timestamp()}] ℹ️ Page snippet: {snippet}")
+            return self._verify_login()
+            
+        except TimeoutException:
+            print(f"[{self._timestamp()}] ❌ Login form timeout")
             return False
         except Exception as e:
             print(f"[{self._timestamp()}] ❌ Login error: {e}")
             return False
     
-    def _save_cookies(self):
-        """Save current session cookies"""
-        try:
-            cookies = self.driver.get_cookies()
-            with open(self.cookie_file, 'wb') as f:
-                pickle.dump(cookies, f)
-            print(f"[{self._timestamp()}] 💾 Cookies saved for future use")
-        except Exception as e:
-            print(f"[{self._timestamp()}] ⚠️ Failed to save cookies: {e}")
-
-    def _wait_for_login_form(self):
-        selectors = ["form[action='/login/']", "form[action*='/login']"]
-        form_selector = ",".join(selectors)
-        WebDriverWait(self.driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, form_selector))
-        )
-
-    def _find_login_field(self, selectors, friendly_name):
-        for selector in selectors:
-            try:
-                element = self.driver.find_element(By.CSS_SELECTOR, selector)
-                if element:
-                    return element
-            except NoSuchElementException:
-                continue
-        raise NoSuchElementException(f"Could not locate {friendly_name} field using selectors: {selectors}")
+    # ==================== SCRAPING LOGIC ====================
     
     def _load_existing_profiles(self):
         """Load existing profiles from ProfilesData"""
@@ -380,7 +477,7 @@ class DamaDamScraper:
             return
         
         try:
-            data = self.checklist_ws.get_all_values()[1:]  # Skip header
+            data = self.checklist_ws.get_all_values()[1:]
             self.tags = [row[0] for row in data if row and row[0]]
             print(f"[{self._timestamp()}] 🏷️ Loaded {len(self.tags)} tags")
         except Exception as e:
@@ -391,13 +488,10 @@ class DamaDamScraper:
         nicknames = []
         
         if self.run_mode == 'online':
-            # Get online users
             nicknames = self._scrape_online_users()
         elif self.run_mode == 'sheet':
-            # Get from RunList
             nicknames = self._get_runlist_nicknames()
         
-        # Apply profile limit if set
         if self.profile_limit and self.profile_limit > 0:
             nicknames = nicknames[:self.profile_limit]
             print(f"[{self._timestamp()}] 🔢 Limited to {len(nicknames)} profiles")
@@ -420,7 +514,7 @@ class DamaDamScraper:
                     if nickname:
                         nicknames.append(nickname)
             
-            nicknames = list(set(nicknames))  # Remove duplicates
+            nicknames = list(set(nicknames))
             print(f"[{self._timestamp()}] 👥 Found {len(nicknames)} online users")
             
             return nicknames
@@ -447,12 +541,10 @@ class DamaDamScraper:
             self.driver.get(url)
             time.sleep(2)
             
-            # Extract profile data (simplified)
             profile_data = {
                 'Nickname': nickname,
                 'ProfileURL': url,
                 'LastUpdated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                # Add more fields as needed
             }
             
             return profile_data
@@ -467,13 +559,11 @@ class DamaDamScraper:
             nickname = profile_data['Nickname']
             
             if nickname in self.existing_profiles:
-                # Update existing
-                row_idx = list(self.existing_profiles.keys()).index(nickname) + 2  # +2 for header
+                row_idx = list(self.existing_profiles.keys()).index(nickname) + 2
                 values = [[v for v in profile_data.values()]]
                 self.profiles_ws.update(f'A{row_idx}:Z{row_idx}', values, value_input_option='USER_ENTERED')
                 status = "UPDATED"
             else:
-                # Append new
                 values = [[v for v in profile_data.values()]]
                 self.profiles_ws.append_row(values, value_input_option='USER_ENTERED')
                 self.existing_profiles[nickname] = profile_data
@@ -502,7 +592,6 @@ class DamaDamScraper:
             found = False
             for idx, row in enumerate(records, start=2):
                 if row['Nickname'] == nickname:
-                    # Update count and timestamps
                     times = int(row.get('Times', 0)) + 1
                     last_seen = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     first_seen = row.get('FirstSeen', last_seen)
@@ -514,7 +603,6 @@ class DamaDamScraper:
                     break
             
             if not found:
-                # Add new entry
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 self.nicklist_ws.append_row([nickname, 1, timestamp, timestamp], 
                                            value_input_option='USER_ENTERED')
@@ -528,6 +616,7 @@ class DamaDamScraper:
             self._setup_browser()
             
             if not self._login_with_cookies():
+                print(f"[{self._timestamp()}] ❌ Login failed - exiting")
                 return False
             
             self._load_existing_profiles()
@@ -539,10 +628,10 @@ class DamaDamScraper:
                 print(f"[{self._timestamp()}] ℹ️ No profiles to process")
                 return True
             
-            print(f"[{self._timestamp()}] \n📊 Processing {len(nicknames)} profiles...")
+            print(f"[{self._timestamp()}] 📊 Processing {len(nicknames)} profiles...")
             
             for idx, nickname in enumerate(nicknames, 1):
-                print(f"[{self._timestamp()}] 📍 Scraping: {nickname}")
+                print(f"[{self._timestamp()}] 📍 [{idx}/{len(nicknames)}] Scraping: {nickname}")
                 
                 profile_data = self._scrape_profile(nickname)
                 
@@ -552,19 +641,19 @@ class DamaDamScraper:
                     self._update_nicklist(nickname)
                     
                     self.processed_count += 1
-                    print(f"[{self._timestamp()}] 🔄 [{idx}/{len(nicknames)}] {status}: {nickname}")
+                    print(f"[{self._timestamp()}] ✅ {status}: {nickname}")
                     
-                    # Update RunList only in sheet mode
                     if self.run_mode == 'sheet':
                         self._update_runlist_status(nickname, 'Done', f'{status} successfully')
                 
-                time.sleep(2)  # Rate limiting
+                time.sleep(2)
             
             print(f"[{self._timestamp()}] ✅ Completed! Processed {self.processed_count} profiles")
             return True
             
         except Exception as e:
             print(f"[{self._timestamp()}] ❌ Fatal error: {e}")
+            print(traceback.format_exc())
             return False
         finally:
             if self.driver:
@@ -596,15 +685,14 @@ def main():
     
     args = parser.parse_args()
     
-    # Run once or repeat
     if args.repeat:
-        print("🔁 Repeat mode enabled - will run indefinitely with 5-min delay after completion")
+        print("🔁 Repeat mode enabled - will run indefinitely with 5-min delay")
         while True:
             scraper = DamaDamScraper(run_mode=args.mode, profile_limit=args.limit)
             scraper.run()
             
             print(f"\n⏳ Waiting 5 minutes before next run...")
-            time.sleep(300)  # 5 minutes
+            time.sleep(300)
     else:
         scraper = DamaDamScraper(run_mode=args.mode, profile_limit=args.limit)
         scraper.run()
